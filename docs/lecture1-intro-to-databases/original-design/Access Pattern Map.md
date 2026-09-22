@@ -1,0 +1,12 @@
+| Access Pattern / Workload | Tables Involved | Read/Write | Latenskrav / Staleness | Understøttet af |
+| --- | --- | --- | --- | --- |
+| Find upcoming trips for a route | Route, Trip | Læsetung | Lav tilladt latens (hurtigt svar). Staleness ok — let forældet data er acceptabelt. | Delvist: query 1 (kommende trips) og query 2 (ordnede stop). Mangler søgning mellem to stops, priser, tilgængelighed. |
+| Show stops on a route | Route_Stops, Stop | Læsetung | Lav tilladt latens (hurtigt svar). Staleness ok — let forældet data er acceptabelt. | Delvist: query 1 (kommende trips) og query 2 (ordnede stop). Mangler søgning mellem to stops, priser, tilgængelighed. |
+| Count trips per route | Route, Trip | Læs + skriv | Korrekthed prioriteres over svartid. Staleness ikke acceptabel her. | Ikke dækket. Ingen products-, tickets- eller payments-tabeller endnu. |
+| Find vehicle assigned to a trip | Trip, Vehicle | Læs + skriv | Lav tilladt latens (sker under boarding). Reporting må gerne halte bagefter. | Ikke dækket. Ingen validations-tabel endnu. |
+| Journey search | Route, Trip, Route_Stops, Stop | Læsetung | Lav tilladt latens (hurtigt svar). Staleness ok — let forældet data er acceptabelt. | Delvist: query 1 (kommende trips) og query 2 (ordnede stop). Mangler søgning mellem to stops, priser, tilgængelighed. |
+| Ticket purchase | (Products, Tickets, Payments) | Læs + skriv | Korrekthed prioriteres over svartid. Staleness ikke acceptabel her. | Ikke dækket. Ingen products-, tickets- eller payments-tabeller endnu. |
+| Ticket validation | (Validations) | Læs + skriv | Lav tilladt latens (sker under boarding). Reporting må gerne halte bagefter. | Ikke dækket. Ingen validations-tabel endnu. |
+| Timetable updates | Route, Stops, Route_Stops, Trip | Skrivetung (operatør) | Høj tilladt latens — ændringer må gerne tage tid om at slå igennem. | Dækket: routes, stops, route_stops, trips kan oprettes/opdateres. |
+| Real-time availability | (Trips + kapacitet) | Meget læsetung | Lav tilladt latens ved opslag. To niveauer af staleness: "godt nok" til søgning vs. "troværdigt" til købsbeslutning. | Ikke dækket. Ingen kapacitets-tracking på trips endnu. |
+| Reporting | (Aggregat-/rapporteringstabeller) | Ren læsning (aggregeret) | Høj tilladt latens — kan vente, behøver ikke afspejle hver skrivning straks. | Ikke dækket. Ingen aggregat-/rapporteringstabeller endnu. |

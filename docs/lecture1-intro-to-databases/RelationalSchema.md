@@ -1,0 +1,5 @@
+stops (id, city_id, name)
+routes (id, operatorId, cityId, mode, short_name)
+route_stops (routeId, stopId, stop_sequence)
+trips (id, routeId, service_date, scheduled_departure_utc, status)
+operators (id, name)
