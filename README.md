@@ -64,6 +64,22 @@ Lecture 4: migration stages and verification — migrations in [`database/postgr
 ## Two decisions worth discussing
 
 *`<TODO — pick two. What did we choose? What was the alternative? Why does our choice fit MobilityTicketing? Which file or result supports it?`*
+> Mit (Peter) Forslag til besvarelse:
+- **FK design on `validations`.** We thought about three ways to link a validation to a ticket:
+  - `validations.ticket_id -> tickets.id`,
+  - `validations.ticket_code -> tickets.ticket_code`,
+  - or a composite FK on both.
+
+  We chose the composite FK `(ticket_id, ticket_code) -> tickets(id, ticket_code)`, backed by a `UNIQUE (id, ticket_code)` on `tickets`, with the reasoning: a simple FK on `ticket_id` alone wouldn't catch it if a validation mistakenly got a `ticket_code` belonging to a different ticket than the one `ticket_id` points to — the two fields could diverge without the database objecting. The composite FK makes that an impossible state, instead of just an assumption.
+  See [`docs/lecture2-sql-operations/Mobility_Integrity_Uge36.md`](docs/lecture2-sql-operations/Mobility_Integrity_Uge36.md) (invariant #6).
+- **Responsibility placement for daily revenue.** We looked at four ways to answer "what is the captured revenue for today":
+  - A direct query.
+  - A SQL function (stored procedure).
+  - A materialized view.
+  - A trigger-maintained summary table.
+
+  We recommended a hybrid (base query/function as authority, nightly refresh of a snapshot for reporting), and rejected the trigger table as a source of truth. The trigger only reacts to `INSERT`. It missed two status corrections entirely (`Failed → Captured` and `Captured → Refunded`), it counted a duplicate delivery of the same `external_payment_reference` as new revenue instead of a repeat, and OP-BUS' only payment was missing from the table completely — not because anything went wrong, but because it was inserted via the seed script before the trigger existed at all (an `AFTER INSERT` trigger can't see pre-existing data).
+  See [`docs/lecture3-sql-programmability/dossier.md`](docs/lecture3-sql-programmability/dossier.md), the responsibility matrix and side-effect trace.
 
 *`Candidates from the work so far: the route_stops primary-key choice (route_id, stop_sequence) in Lecture 1 vs. (route_id, stop_id) — see the dossier's candidate-key table; or why the Lecture 3 responsibility matrix ruled out the trigger-maintained table as the source of truth despite its low read cost.>`*
 
