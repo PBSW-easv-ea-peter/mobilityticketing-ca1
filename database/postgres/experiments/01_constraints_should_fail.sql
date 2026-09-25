@@ -70,10 +70,19 @@ insert into payments (
     'gateway-capture-0001', 36, 'DKK', 'Captured'
 );
 
--- 10. Mismatched ticket id and ticket code. Expected: composite FOREIGN KEY violation.
-insert into validations (
-    id, ticket_id, ticket_code, vehicle_id, stop_id, device_id, result
+-- 10. Duplicate external payment reference. Expected: UNIQUE violation.
+insert into payments (
+    id, user_id, ticket_id, external_payment_reference,
+    amount, currency, status
 ) values (
-    'VALIDATION-MISMATCH', 'TICKET-1', 'CODE-5C-0001',
+    'PAYMENT-DUPLICATE-REFERENCE', 'USER-1', 'TICKET-1',
+    'gateway-capture-0002', 36, 'DKK', 'Unknown'
+);
+
+-- 11. Mismatched ticket id and ticket code. Expected: composite FOREIGN KEY violation.
+insert into validations (
+    id, ticket_id, vehicle_id, stop_id, device_id, result
+) values (
+    'VALIDATION-MISMATCH', 'Unknow',
     'BUS-5C-01', 'STOP-CENTRAL', 'DEVICE-01', 'Accepted'
 );

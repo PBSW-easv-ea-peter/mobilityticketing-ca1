@@ -1,3 +1,30 @@
+-- Copy this file to 020_reporting_function.sql and apply it.
+-- A function centralises the read logic but does not store an aggregate result.
+
+create or replace function captured_revenue_for_day(
+    requested_operator_id text,
+    requested_date date
+)
+returns table (
+    captured_amount numeric,
+    captured_payments bigint
+)
+language sql
+stable
+as $$
+    select
+        coalesce(sum(p.amount), 0),
+        count(*)
+    from payments p
+    join tickets t on t.id = p.ticket_id
+    join trips tr on tr.id = t.trip_id
+    join routes r on r.id = tr.route_id
+    where r.operator_id = requested_operator_id
+      and p.created_utc::date = requested_date
+      and p.status = 'Captured';
+$$;
+
+-----------------------------------------------------------------
 -- Copy this file to 021_daily_revenue_trigger.sql and apply it.
 -- This is deliberately incomplete. Document the behaviour before extending it.
 
@@ -48,3 +75,26 @@ execute function add_inserted_payment_to_daily_revenue();
 
 -- TODO: analyse corrections, refunds, deletes, initial backfill, and duplicate delivery.
 -- Do not add more trigger branches before documenting the behaviour.
+
+--------------------------------------------------------------------
+-- Copy this file to 022_daily_captured_revenue.sql and apply it.
+
+create materialized view daily_captured_revenue as
+select
+    r.operator_id,
+    p.created_utc::date as revenue_date,
+    sum(p.amount) as captured_amount,
+    count(*) as captured_payments
+from payments p
+join tickets t on t.id = p.ticket_id
+join trips tr on tr.id = t.trip_id
+join routes r on r.id = tr.route_id
+where p.status = 'Captured'
+group by r.operator_id, p.created_utc::date
+with no data;
+
+create unique index daily_captured_revenue_key
+    on daily_captured_revenue (operator_id, revenue_date);
+
+-- Run explicitly when the source data should become visible:
+-- refresh materialized view daily_captured_revenue;
