@@ -32,9 +32,9 @@ answer.
 | Revenue trigger | `database/postgres/migrations/021_daily_revenue_trigger.sql` | Lecture 3 | Applied, analysed |
 | Materialised view | `database/postgres/migrations/022_daily_captured_revenue.sql` | Lecture 3 | Applied, analysed |
 | Migration fixture (ticket at 65 DKK) | `database/postgres/init/013_migration_fixture.sql` | Course-supplied reference | Given |
-| Product identity expansion | `database/postgres/migrations/030_expand_product_identity.sql` | **Our own Lecture 4 work** | TODO |
-| Backfill | `database/postgres/migrations/031_backfill_ticket_product.sql` | Lecture 4 | TODO |
-| Require new reference | `database/postgres/migrations/032_require_ticket_product.sql` | Lecture 4 | TODO |
+| Product identity expansion | `database/postgres/migrations/030_expand_product_identity.sql` | **Our own Lecture 4 work** | Applied, analysed |
+| Backfill | `database/postgres/migrations/031_backfill_ticket_product.sql` | Lecture 4 | Applied, analysed |
+| Require new reference | `database/postgres/migrations/032_require_ticket_product.sql` | Lecture 4 | Applied, analysed |
 
 One deliberate decision: the Lecture 4 starter repository ships its own
 "completed integrity" reference state (`init/012_completed_integrity.sql`),

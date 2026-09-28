@@ -73,5 +73,9 @@ Migrationen anvender desuden `NOT VALID` på foreign key-constrainten, så const
 ### TODO
 
 - [ ] Kør `./database/postgres/migrations/003_ticket_migration.sql`.
-- [ ] Kør `./database/postgres/experiments/04_check_ticket_table_after_migrations.sql`.
+- [ ] Kør `./database/postgres/experiments/03_check_ticket_table_after_migrations.sql`.
 - [ ] Kontrollér, at den gamle Writer/Reader stadig fungerer.
+
+---
+
+Vores arbejde for de enkelte uger kan findes i `docs`, og PROGRESSION.md forklarer udviklingen.
