@@ -53,6 +53,13 @@ begin
             add constraint payments_amount_non_negative
                 check (amount >= 0);
     end if;
+
+    if not exists (select 1 from pg_constraint where conname = 'payments_status_check') then
+        alter table payments
+            add constraint payments_status_check
+                check (status IN ('Captured', 'Pending', 'Expired', 'Rejected', 'Refunded'));
+    end if;
+
 end $$;
 
 do $$
@@ -91,19 +98,10 @@ end $$;
 
 do $$
 begin
-    -- Composite candidate key backing validations_ticket_fk below: ensures (id, ticket_code)
-    -- is a valid FK target, so a validation cannot combine one ticket's id with another
-    -- ticket's code.
-    if not exists (select 1 from pg_constraint where conname = 'tickets_id_ticket_code_unique') then
-        alter table tickets
-            add constraint tickets_id_ticket_code_unique
-                unique (id, ticket_code);
-    end if;
-
     if not exists (select 1 from pg_constraint where conname = 'validations_ticket_fk') then
         alter table validations
             add constraint validations_ticket_fk
-                foreign key (ticket_id, ticket_code) references tickets(id, ticket_code);
+                foreign key (ticket_id) references tickets(id);
     end if;
 end $$;
 
@@ -113,6 +111,15 @@ begin
         alter table payments
             add constraint payments_external_reference_unique
                 unique (external_payment_reference);
+    end if;
+end $$;
+
+do $$
+begin
+    if not exists (select 1 from pg_constraint where conname = 'tickets_status_check') then
+        alter table tickets
+            add constraint tickets_status_check
+                check (status IN ('Scheduled', 'Active', 'Expired', 'Validated'));
     end if;
 end $$;
 
