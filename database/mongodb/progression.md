@@ -99,3 +99,57 @@ The script includes the following test cases:
 
 ### Status
 ✅ **Completed**: Journey search implemented and tested.
+
+---
+
+## 03: A Query That Looks Right, But Isn't
+
+### Objective
+Reproduce and fix a common MongoDB array query bug where separate conditions on the same array can lead to incorrect matches.
+
+### Problem Reproduction
+The [`search_bug.js`](./lecture05/search_bug.js) script demonstrates the issue:
+
+#### Broken Query
+```javascript
+const broken_query = {
+  cityId: "CPH",
+  fromStopId: "STOP-NORREPORT",
+  toStopId: "STOP-AIRPORT",
+  "departures.status": "Scheduled",
+  "departures.departureUtc": { $gte: start, $lt: end },
+};
+```
+
+**Why It Fails**:
+- The query applies **separate conditions** to the `departures` array.
+- MongoDB matches the document if **any** departure satisfies the `status` condition **AND any (possibly different)** departure satisfies the `time` condition.
+- **Document B (`LAB05:B`)** incorrectly matches because:
+  - `LAB05-T-B1` has `status: "Scheduled"` (satisfies the status condition).
+  - `LAB05-T-B2` has `departureUtc: 2026-10-02T06:15:00Z` (satisfies the time condition).
+- Thus, the document matches even though **no single departure** satisfies both conditions.
+
+#### Fixed Query
+```javascript
+const fixed_query = {
+  cityId: "CPH",
+  fromStopId: "STOP-NORREPORT",
+  toStopId: "STOP-AIRPORT",
+  departures: {
+    $elemMatch: {
+      status: "Scheduled",
+      departureUtc: { $gte: start, $lt: end },
+    },
+  },
+};
+```
+
+**Why It Works**:
+- `$elemMatch` ensures that **both conditions** (`status` and `departureUtc`) apply to the **same departure** in the array.
+- Document B no longer matches because neither `LAB05-T-B1` nor `LAB05-T-B2` satisfies both conditions simultaneously.
+
+### Key Takeaway
+When querying arrays in MongoDB, **separate conditions on the same array** can lead to unexpected matches. Use `$elemMatch` to ensure all conditions apply to the **same array element**.
+
+### Status
+✅ **Completed**: Bug reproduced, fixed, and documented.
