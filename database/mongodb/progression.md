@@ -204,3 +204,89 @@ Demonstrate the trade-off of duplicated data: while it simplifies reads, it comp
 
 ### Status
 ✅ **Completed**: Duplicated data trade-off demonstrated and documented.
+
+---
+
+## 05: How Large Can the Document Get?
+
+### Objective
+Investigate the impact of document growth when storing many departures in a single document and decide how to limit it.
+
+### Steps
+1. **Create a Document with 100 Departures**:
+   - Copy `LAB05:A` and replace its `departures` array with 100 departures.
+   - Measure the document size using `$bsonSize`.
+
+2. **Create a Document with 1,000 Departures**:
+   - Replace the `departures` array with 1,000 departures.
+   - Measure the document size again.
+
+3. **Compare the Sizes**:
+   - Observe the linear growth in document size as the number of departures increases.
+   - Example output:
+     - 100 departures: ~X bytes
+     - 1,000 departures: ~10X bytes
+
+### Decision: How to Limit Growth
+**Limited window**: Keep only a limited time window of departures (e.g., 24-48 hours) in each document to prevent unbounded growth. This ensures documents remain manageable in size while still providing useful data for recent searches.
+
+### Files
+- [`growth.js`](./lecture05/growth.js): Script to test document growth with 100 and 1,000 departures.
+
+### Status
+✅ **Completed**: Document growth measured and mitigation strategy documented.
+
+---
+
+## 06: Try One Departure Per Document
+
+### Objective
+Implement an alternative data model where each departure is stored as its own document in a new collection (`journey_search_by_trip`). Compare this approach with the original model.
+
+### Steps
+1. **Build the Alternative Model**:
+   - Create the `journey_search_by_trip` collection.
+   - Loop over the existing `journey_search` documents and their departures.
+   - For each departure, create a new document with the following fields:
+     ```json
+     {
+       "_id": "cityId:routeId:fromStopId:toStopId:tripId",
+       "cityId": "CPH",
+       "routeId": "LINE-M2",
+       "fromStopId": "STOP-NORREPORT",
+       "toStopId": "STOP-AIRPORT",
+       "tripId": "LAB05-T-OK",
+       "departureUtc": ISODate("2026-10-02T06:20:00Z"),
+       "arrivalUtc": ISODate("2026-10-02T06:40:00Z"),
+       "status": "Scheduled",
+       "availableSeats": 10,
+       "price": NumberDecimal("36.00"),
+       "currency": "DKK",
+       "schemaVersion": 1
+     }
+     ```
+   - The `_id` is deterministic and uniquely identifies the trip and stop pair.
+   - With the fixture, the collection contains **10 documents** (including two for `LAB05-T-OK` because it appears in two different journeys).
+
+2. **Implement the Search**:
+   - Use the same input (`cityId`, `fromStopId`, `toStopId`, `start`, `end`) and return the same result format as the original search.
+   - The query filters for `status: "Scheduled"` and `departureUtc` within the `[start, end)` range.
+
+3. **Run the Same Tests**:
+   - All test cases from **Task 02** are run against `journey_search_by_trip`.
+   - The results match the original `journey_search` collection.
+
+4. **Cancel the Trip**:
+   - Update all documents with `tripId: "LAB05-T-OK"` to set `status: "Cancelled"`.
+   - **Observation**: In the new model, only the documents with `tripId: "LAB05-T-OK"` need to be updated (2 documents).
+   - In the original model, multiple journey documents had to be updated (e.g., `LAB05:A` and `LAB05:C`).
+
+### Key Takeaway
+- **One departure per document** simplifies updates (only the relevant trip documents need to be modified).
+- **Trade-off**: Queries may require additional filtering (e.g., by `cityId`, `fromStopId`, `toStopId`) to achieve the same results as the original model.
+
+### Files
+- [`alternative/alternative.js`](./lecture05/alternative/alternative.js): Script to build the alternative model, implement the search, and test it.
+
+### Status
+✅ **Completed**: Alternative model implemented, tested, and documented.
