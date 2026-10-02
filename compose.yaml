@@ -14,3 +14,28 @@ services:
       interval: 2s
       timeout: 3s
       retries: 15
+
+  mongo:
+    image: mongo:8.0
+    ports:
+      - "127.0.0.1:27017:27017"
+    volumes:
+      - mobility-mongo:/data/db
+      - ./database/mongodb:/scripts:ro
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "mongosh",
+          "--quiet",
+          "--eval",
+          "quit(db.runCommand({ping:1}).ok ? 0 : 1)",
+        ]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+      start_period: 5s
+
+volumes:
+  mobility-mongo:
+
