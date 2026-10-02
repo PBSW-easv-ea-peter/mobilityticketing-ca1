@@ -43,3 +43,59 @@ Both inserts should fail with:
 
 ### Status
 ✅ **Completed**: Schema validator verified and invalid inserts tested.
+
+---
+
+## 02: Implement Journey Search
+
+### Objective
+Create a `search.js` script that searches the `journey_search` collection for matching departures based on:
+- `cityId`
+- `fromStopId`
+- `toStopId`
+- `start` (inclusive)
+- `end` (exclusive)
+
+### Implementation
+The [`search.js`](./lecture05/search.js) script uses MongoDB aggregation to:
+1. Filter documents by `cityId`, `fromStopId`, and `toStopId`.
+2. Unwind the `departures` array to process each departure individually.
+3. Filter for `Scheduled` departures within the `[start, end)` time range.
+4. Sort results by `departureUtc`.
+5. Project the output to match the required format:
+   ```json
+   {
+     "cityId": "CPH",
+     "routeId": "LINE-M2",
+     "fromStopId": "STOP-NORREPORT",
+     "toStopId": "STOP-AIRPORT",
+     "tripId": "LAB05-T-OK",
+     "departureUtc": ISODate("2026-10-02T06:20:00Z"),
+     "arrivalUtc": ISODate("2026-10-02T06:40:00Z"),
+     "availableSeats": 10,
+     "price": NumberDecimal("36.00"),
+     "currency": "DKK"
+   }
+   ```
+
+### Input Validation
+The script rejects invalid input:
+- If `end <= start`, return `[]`.
+- If `cityId`, `fromStopId`, or `toStopId` is empty, return `[]`.
+
+### Test Cases
+The script includes the following test cases:
+
+| Search | Expected |
+|--------|----------|
+| Nørreport to Airport, 06:00 to 07:00 | `LAB05-T-OK` |
+| End at 06:20 | `[]` |
+| Start at 06:20 | `LAB05-T-OK` |
+| Airport to Nørreport | `LAB05-T-E` |
+| Same search on 3 October | `LAB05-T-F` |
+| Destination STOP-NO-MATCH | `[]` |
+| Invalid input (`end <= start`) | `[]` |
+| Invalid input (empty stop ID) | `[]` |
+
+### Status
+✅ **Completed**: Journey search implemented and tested.
