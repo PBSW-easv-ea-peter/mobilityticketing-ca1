@@ -153,3 +153,54 @@ When querying arrays in MongoDB, **separate conditions on the same array** can l
 
 ### Status
 ✅ **Completed**: Bug reproduced, fixed, and documented.
+
+---
+
+## 04: Updating Duplicated Data
+
+### Objective
+Demonstrate the trade-off of duplicated data: while it simplifies reads, it complicates updates because changes must be applied to all copies.
+
+### Steps
+1. **Cancel the Trip**:
+   - Use `updateMany` with `arrayFilters` to update every occurrence of `LAB05-T-OK` to `Cancelled`.
+   - Verify that `LAB05-T-OK` no longer appears in the journey search.
+
+2. **Run the Update Again**:
+   - Re-run the same `updateMany` query.
+   - Observe:
+     - `matchedCount`: Number of documents that matched the filter (still matches even if no changes are made).
+     - `modifiedCount`: Number of documents actually modified (should be `0` if no changes are needed).
+   - **Why?** The query still matches the documents, but no changes are applied because the `status` is already `Cancelled`.
+
+3. **Make the Data Inconsistent**:
+   - **Run `reset.js`** to restore the fixture.
+   - Update only **Document A** to cancel `LAB05-T-OK`:
+     ```javascript
+     m.journey_search.updateOne(
+       { _id: "LAB05:A", "departures.tripId": "LAB05-T-OK" },
+       { $set: { "departures.$[trip].status": "Cancelled" } },
+       { arrayFilters: [{ "trip.tripId": "LAB05-T-OK" }] }
+     );
+     ```
+
+4. **Check the Effect**:
+   - Run the following searches:
+     - **Nørreport to Airport**: Shows `LAB05-T-OK` as `Cancelled` (from Document A).
+     - **Nørreport to Central**: Shows `LAB05-T-OK` as `Scheduled` (from Document C).
+   - The searches now **disagree** about the status of the same trip.
+
+5. **Repair the Data**:
+   - Update the remaining copy of `LAB05-T-OK` in **Document C** to `Cancelled`.
+   - Re-run the searches to verify they now agree.
+
+### Key Takeaway
+- **Duplicated data** makes reads convenient (e.g., `LAB05-T-OK` appears in multiple documents for different routes).
+- **Updates must reach every copy** to maintain consistency. If not, searches can return conflicting results.
+- **When to run `reset.js`**: Before making the data inconsistent (Step 3).
+
+### Files
+- [`updates/status.js`](./lecture05/updates/status.js): Contains all steps for this task.
+
+### Status
+✅ **Completed**: Duplicated data trade-off demonstrated and documented.
