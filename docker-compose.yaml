@@ -22,6 +22,7 @@ services:
     volumes:
       - mobility-mongo:/data/db
       - ./database/mongodb:/scripts:ro
+      - ./database/redis:/scripts:ro
     healthcheck:
       test:
         [
