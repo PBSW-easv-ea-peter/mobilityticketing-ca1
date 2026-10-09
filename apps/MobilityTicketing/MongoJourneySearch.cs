@@ -1,5 +1,5 @@
 using System.Globalization;
-using System.Text.Json.Serialization;
+using System.Collections.Concurrent;
 using MobilityTicketing.Models;
 using MongoDB.Bson;
 using MongoDB.Driver;
@@ -15,6 +15,10 @@ public sealed class MongoJourneySearch
     
     // Redis Cache Service
     CacheJourneySearch _cache;
+ 
+    // Cache stampede prevention by grouping requests
+    private readonly ConcurrentDictionary<string, SemaphoreSlim>
+        _requestLocks = new();
     
     public MongoJourneySearch()
     {
@@ -26,21 +30,65 @@ public sealed class MongoJourneySearch
         
         _cache = new CacheJourneySearch();
     }
-
+    
+    
     public async Task<List<Journey>> Fetch(SearchRequest q)
     {
-        (List<Journey> cachedJourneys, bool isCached) = await _cache.TryGetSearchRequestAsync(q);
+        // Check cache
+        (List<Journey> journeys, bool isCached) =
+            await _cache.TryGetSearchRequestAsync(q);
 
         if (isCached)
         {
             Console.WriteLine("hit");
-            return cachedJourneys;
+            return journeys;
         }
-        
+
         Console.WriteLine("miss");
+
+        string key = RedisKeyBuilder.BuildSearchKey(q);
         
-        if (DelayMilliseconds > 0) await Task.Delay(DelayMilliseconds);
-        Interlocked.Increment(ref _calls);
+        // Avoid stampede by grouping requests
+        SemaphoreSlim gate = _requestLocks.GetOrAdd(
+            key, _ => new SemaphoreSlim(1, 1));
+
+        await gate.WaitAsync();
+
+        try
+        {
+            // Try cache again since another request might have populated it while this request was waiting.
+            (journeys, isCached) =
+                await _cache.TryGetSearchRequestAsync(q);
+
+            if (isCached)
+            {
+                Console.WriteLine("hit after waiting");
+                return journeys;
+            }
+
+            // Else go to MongoDB
+            if (DelayMilliseconds > 0)
+                await Task.Delay(DelayMilliseconds);
+
+            // Add 1 to MongoDb count
+            Interlocked.Increment(ref _calls);
+
+            journeys = await QueryMongoAsync(q);
+            
+            // Cache the Journeys
+            await _cache.SetSearchRequestAsync(q, journeys);
+
+            return journeys;
+        }
+        finally
+        {
+            gate.Release();
+        }
+    }
+
+    private async Task<List<Journey>> QueryMongoAsync(SearchRequest q)
+    {
+
         var range = new BsonDocument("$gte", new BsonDateTime(q.Start.UtcDateTime))
             .Add("$lt", new BsonDateTime(q.End.UtcDateTime));
         var pipeline = new[] {
@@ -69,9 +117,6 @@ public sealed class MongoJourneySearch
                     d["currency"].AsString);
             })
         ];
-        
-        // Cache Journeys
-        await _cache.SetSearchRequestAsync(q, journeys);
         
         return journeys;
     }

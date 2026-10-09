@@ -10,11 +10,8 @@ string fromStop = "STOP-NORREPORT";
 string toStop = "STOP-AIRPORT";
 DateTimeOffset morningStart = new(2026, 10, 2, 6, 0, 0, TimeSpan.Zero);
 DateTimeOffset morningEnd = new(2026, 10, 2, 7, 0, 0, TimeSpan.Zero);
-DateTimeOffset eveningStart = new(2026, 10, 2, 18, 0, 0, TimeSpan.Zero);
-DateTimeOffset eveningEnd = new(2026, 10, 2, 19, 0, 0, TimeSpan.Zero);
 
 SearchRequest morningRequest = new(city, fromStop, toStop, morningStart, morningEnd);
-SearchRequest eveningRequest = new(city, fromStop, toStop, eveningStart, eveningEnd);
 
 MongoJourneySearch source = new();
 
@@ -38,29 +35,8 @@ async Task DeleteRedisKey(string key)
     catch { /* Ignore Redis errors */ }
 }
 
-// Helper method to set Redis key with specific value and expiry
-async Task SetRedisKey(string key, string value, TimeSpan? expiry = null)
-{
-    try
-    {
-        var options = ConfigurationOptions.Parse("127.0.0.1:6379");
-        options.AbortOnConnectFail = false;
-        await using var redis = await ConnectionMultiplexer.ConnectAsync(options);
-        var db = redis.GetDatabase();
-        if (expiry.HasValue)
-        {
-            await db.StringSetAsync(key, value, expiry.Value);
-        }
-        else
-        {
-            await db.StringSetAsync(key, value);
-        }
-    }
-    catch { /* Ignore Redis errors */ }
-}
-
-// Helper method to run a test and record results
-async Task TestResult(string testName, string cacheKey, SearchRequest request, bool deleteKeyFirst = false)
+// Helper method to run concurrent tests
+async Task ConcurrentTestResult(string testName, string cacheKey, SearchRequest request, int concurrentRequests, bool deleteKeyFirst = false)
 {
     if (deleteKeyFirst)
     {
@@ -69,85 +45,92 @@ async Task TestResult(string testName, string cacheKey, SearchRequest request, b
     
     int callsBefore = source.Calls;
     var stopwatch = Stopwatch.StartNew();
-    List<Journey> result = await source.Fetch(request);
-    stopwatch.Stop();
-    int callsAfter = source.Calls;
     
-    string dataSource = callsAfter > callsBefore ? "MongoDB" : "Redis";
-    string tripIds = FormatResults(result);
+    // Run concurrent requests
+    var tasks = Enumerable.Range(0, concurrentRequests)
+        .Select(_ => source.Fetch(request))
+        .ToList();
+    
+    List<Journey>[] results = await Task.WhenAll(tasks);
+    stopwatch.Stop();
+    
+    int callsAfter = source.Calls;
     int mongoCalls = callsAfter - callsBefore;
     long elapsedMs = stopwatch.ElapsedMilliseconds;
     
+    // Check if all results are the same
+    bool allResultsSame = results.All(r => 
+        r.SequenceEqual(results[0], new JourneyEqualityComparer()));
+    
     Console.WriteLine($"\n--- Test {testName} ---");
     Console.WriteLine($"Cache key: {cacheKey}");
-    Console.WriteLine($"Data source: {dataSource}");
-    Console.WriteLine($"Returned trip IDs: {tripIds}");
+    Console.WriteLine($"Concurrent requests: {concurrentRequests}");
     Console.WriteLine($"MongoDB-call count: {mongoCalls}");
     Console.WriteLine($"Elapsed time: {elapsedMs}ms");
+    Console.WriteLine($"All results identical: {allResultsSame}");
+    if (results.Length > 0 && results[0].Count > 0)
+    {
+        Console.WriteLine($"Returned trip IDs: {FormatResults(results[0])}");
+    }
 }
 
 // Run tests
-Console.WriteLine("=== Starting Cache Tests ===\n");
+Console.WriteLine("=== Task 07: Concurrent Searches ===\n");
 
-// Test A: Repeat a search
 string morningKey = GetCacheKey(morningRequest);
 
-// First search (delete key first to ensure MongoDB call)
-await TestResult("A1", morningKey, morningRequest, deleteKeyFirst: true);
+// Set artificial delay of 200ms
+source.DelayMilliseconds = 200;
+Console.WriteLine("Set artificial delay to 200ms");
 
-// Second search (should be cached)
-await TestResult("A2", morningKey, morningRequest, deleteKeyFirst: false);
+// First batch: 10 concurrent requests with empty cache
+Console.WriteLine("\n--- Test 07A: First batch of 10 concurrent requests (empty cache) ---");
+await ConcurrentTestResult("07A", morningKey, morningRequest, 10, deleteKeyFirst: true);
 
-// Test B: Cache an empty result
-string eveningKey = GetCacheKey(eveningRequest);
+// Second batch: 10 concurrent requests with existing cache
+Console.WriteLine("\n--- Test 07B: Second batch of 10 concurrent requests (cached) ---");
+await ConcurrentTestResult("07B", morningKey, morningRequest, 10, deleteKeyFirst: false);
 
-// First evening search (should return empty from MongoDB)
-await TestResult("B1", eveningKey, eveningRequest, deleteKeyFirst: true);
+// Remove artificial delay
+source.DelayMilliseconds = 0;
+Console.WriteLine("\nRemoved artificial delay");
 
-// Second evening search (should be cached empty result)
-await TestResult("B2", eveningKey, eveningRequest, deleteKeyFirst: false);
-
-// Test C: Expire a result
-Console.WriteLine($"\n--- Test C ---");
-Console.WriteLine($"Cache key: {morningKey}");
-
-// Set expiry to 1 second
-Console.WriteLine("Setting Redis key expiry to 1 second...");
-try
-{
-    var options = ConfigurationOptions.Parse("127.0.0.1:6379");
-    options.AbortOnConnectFail = false;
-    await using var redis = await ConnectionMultiplexer.ConnectAsync(options);
-    await redis.GetDatabase().KeyExpireAsync(morningKey, TimeSpan.FromSeconds(1));
-}
-catch { /* Ignore Redis errors */ }
-
-// Wait until TTL returns -2 (expired)
-Console.WriteLine("Waiting for key to expire...");
-await Task.Delay(1000);
-
-// Run search again (should call MongoDB since cache expired)
-await TestResult("C1", morningKey, morningRequest, deleteKeyFirst: false);
-
-// Test D: Store an invalid value
-Console.WriteLine($"\n--- Test D ---");
-Console.WriteLine($"Cache key: {morningKey}");
-
-// D1: Replace with non-JSON value
-Console.WriteLine("Setting cache to invalid value: 'not-json'");
-await SetRedisKey(morningKey, "not-json", TimeSpan.FromSeconds(20));
-await TestResult("D1", morningKey, morningRequest, deleteKeyFirst: false);
-
-// D2: Replace with JSON containing wrong schemaVersion
-Console.WriteLine("Setting cache to JSON with wrong schemaVersion");
-string wrongSchemaJson = "{\"schemaVersion\": 999, \"cachedAtUtc\": \"2026-10-09T08:00:00Z\", \"items\": []}";
-await SetRedisKey(morningKey, wrongSchemaJson, TimeSpan.FromSeconds(20));
-await TestResult("D2", morningKey, morningRequest, deleteKeyFirst: false);
-
-// D3: Replace with JSON missing items field
-Console.WriteLine("Setting cache to JSON missing items field");
-string missingItemsJson = "{\"schemaVersion\": 2, \"cachedAtUtc\": \"2026-10-09T08:00:00Z\"}";
-await SetRedisKey(morningKey, missingItemsJson, TimeSpan.FromSeconds(20));
-await TestResult("D3", morningKey, morningRequest, deleteKeyFirst: false);
+// Explanation
+Console.WriteLine("\n=== Explanation ===");
+Console.WriteLine("The first batch can query MongoDB more than once because:");
+Console.WriteLine("1. All 10 requests start simultaneously and check the cache first");
+Console.WriteLine("2. Since the cache is empty (key was deleted), all requests get a cache miss");
+Console.WriteLine("3. All requests then proceed to query MongoDB before any of them have finished");
+Console.WriteLine("4. With the 200ms artificial delay, multiple requests can enter the MongoDB query section");
+Console.WriteLine("5. Each request that enters the MongoDB section increments the call counter and executes the query");
+Console.WriteLine("6. This is a race condition: the cache check and MongoDB query are not atomic");
+Console.WriteLine("\nThe second batch should show only 0-1 MongoDB calls because:");
+Console.WriteLine("1. The cache now contains valid data from the first batch");
+Console.WriteLine("2. All concurrent requests will find the cached data and return it");
+Console.WriteLine("3. No requests need to query MongoDB");
 
 Console.WriteLine("\n=== All Tests Complete ===");
+
+// Journey equality comparer for checking if results are the same
+public class JourneyEqualityComparer : IEqualityComparer<Journey>
+{
+    public bool Equals(Journey? x, Journey? y)
+    {
+        if (x == null || y == null) return false;
+        return x.TripId == y.TripId &&
+               x.CityId == y.CityId &&
+               x.RouteId == y.RouteId &&
+               x.FromStopId == y.FromStopId &&
+               x.ToStopId == y.ToStopId &&
+               x.DepartureUtc == y.DepartureUtc &&
+               x.ArrivalUtc == y.ArrivalUtc &&
+               x.AvailableSeats == y.AvailableSeats &&
+               x.Price == y.Price &&
+               x.Currency == y.Currency;
+    }
+    
+    public int GetHashCode(Journey obj)
+    {
+        return obj.TripId.GetHashCode();
+    }
+}
