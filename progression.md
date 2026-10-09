@@ -25,5 +25,16 @@ Added a static `RedisKeyBuilder` class with methods for generating consistent Re
 This addition provides a standardized way to generate Redis keys for caching journey search results, ensuring consistent key formatting and proper parameter validation for the caching layer.
 This is to avoid getting false cache hits, from the original key were the 'start' and 'end' was not included. This could lead to getting journeys before/after the search.
 
+### 03: Updated Caching to Use Structured JSON with 20s Expiry
+
+#### Modified Files:
+- `./apps/MobilityTicketing/CacheJourneySearch.cs`
+- `./apps/MobilityTicketing/MongoJourneySearch.cs`
+
+#### Purpose:
+
+Implements a standardized cache structure with versioning and timestamps for better cache management, with a short 20-second expiry to ensure data freshness while still providing caching benefits.
+MongoJourneySearch uses CacheJourneySearch to cache request results.
+
 ---
 

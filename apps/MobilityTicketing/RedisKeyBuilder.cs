@@ -1,4 +1,5 @@
 using System.Globalization;
+using MobilityTicketing.Models;
 
 namespace MobilityTicketing;
 
@@ -13,33 +14,16 @@ public static class RedisKeyBuilder
             CultureInfo.InvariantCulture);
 
     public static string BuildSearchKey(
-        string cityId,
-        string fromStopId,
-        string toStopId,
-        DateTimeOffset start,
-        DateTimeOffset end)
+        SearchRequest request)
     {
-        if (string.IsNullOrEmpty(cityId) ||
-            string.IsNullOrEmpty(fromStopId) ||
-            string.IsNullOrEmpty(toStopId))
-        {
-            throw new ArgumentException("Search IDs cannot be empty.");
-        }
-
-        if (end <= start)
-        {
-            throw new ArgumentException(
-                "End time must be after start time.");
-        }
-
         return string.Join(":",
             "search",
             "LAB06",
             "v2",
-            Part(cityId),
-            Part(fromStopId),
-            Part(toStopId),
-            Part(Instant(start)),
-            Part(Instant(end)));
+            Part(request.CityId),
+            Part(request.FromStopId),
+            Part(request.ToStopId),
+            Part(Instant(request.Start)),
+            Part(Instant(request.End)));
     }
 }
