@@ -27,11 +27,19 @@ public class CacheJourneySearch
         
         if (cached.HasValue)
         {
-            JsonNode? node = JsonNode.Parse(cached.ToString());
-            if (node?["items"] is JsonArray itemsArray)
+            try
             {
-                List<Journey> journeys = itemsArray.Deserialize<List<Journey>>() ?? [];
-                return (journeys, true);
+                JsonNode? node = JsonNode.Parse(cached.ToString());
+                if (node?["items"] is JsonArray itemsArray)
+                {
+                    List<Journey> journeys = itemsArray.Deserialize<List<Journey>>() ?? [];
+                    return (journeys, true);
+                }
+            }
+            catch (JsonException)
+            {
+                // Invalid JSON - treat as cache miss
+                return ([], false);
             }
         }
   

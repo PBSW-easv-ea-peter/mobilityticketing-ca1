@@ -38,3 +38,12 @@ MongoJourneySearch uses CacheJourneySearch to cache request results.
 
 ---
 
+### 04: Test the cache search
+
+#### Modified files:
+- `./apps/MobilityTicketing/Program.cs`
+- `./apps/MobilityTicketing/CacheJourneySearch.cs`
+
+#### Purpose:
+
+Test resistence to Redis being unavailable, cache misses, hits, and invalid cache data. Aswell as counting calls to Mongo.
