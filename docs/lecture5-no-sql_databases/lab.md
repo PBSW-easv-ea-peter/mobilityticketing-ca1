@@ -12,7 +12,7 @@ During the lab you will build the search, work with arrays in MongoDB, update du
 
 Continue in your existing MobilityTicketing repository.
 
-If you are starting fresh, you can clone the starter repository.
+If you are starting fresh, you can clone the [starter repository](https://github.com/patrickstolc/mobilityticketing-lecture-5-starter).
 
 Add:
 
@@ -34,7 +34,7 @@ Replace search.js with the script you want to run.
 You'll also be resetting the database between tasks. For the sake of convenience, you can use the following command:
 
 ```bash
-docker compose exec -T mongo mongosh --quiet --file /scripts/lecture05/reset.js
+docker compose exec -T mongo mongosh --quiet --file ./scripts/lecture05/reset.js
 ```
 
 ## 1. Start MongoDB
@@ -85,7 +85,7 @@ Run:
 
 ```bash
 docker compose exec -T mongo \
-  mongosh --quiet --file /scripts/lecture05/setup.js
+  mongosh --quiet --file ./scripts/lecture05/setup.js
 ```
 
 This creates six documents in:
