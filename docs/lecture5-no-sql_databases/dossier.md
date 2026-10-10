@@ -68,6 +68,8 @@ The interval is half-open (start inclusive, end exclusive), so `LAB05-T-EDGE` at
 | Airport to Nørreport | LAB05-T-E | PASS |
 | Same search on 3 October | LAB05-T-F | PASS |
 | Destination STOP-NO-MATCH | [] | PASS |
+| Nørreport to Central | LAB05-T-OK | PASS |
+| Nørreport to Airport, 07:00–08:00 | LAB05-T-EDGE | PASS |
 | `end <= start` | error | PASS |
 | Empty stop ID | error | PASS |
 
@@ -173,4 +175,23 @@ At ~123 bytes per departure, the 16 MB document limit allows about 136,000 depar
 
 ## 6. One departure per document
 
-_TODO_
+`alternative.js` builds `journey_search_by_trip` from the fixture, one document per dated trip and stop pair, with a deterministic `_id`: `city:route:from:to:trip`. `tripId` alone is not unique, since `LAB05-T-OK` is stored for both Airport and Central. The script inserted 10 documents.
+
+The search needs no `$unwind`. A single `find` with filter, projection and `sort` replaces the aggregation pipeline. All 10 tests from section 2 pass. Cancelling `LAB05-T-OK` with a plain `$set` (no `arrayFilters`) gave matched 2, modified 2, and the three T-OK cases then return `[]`.
+
+| | `journey_search` (embedded) | `journey_search_by_trip` |
+|---|---|---|
+| Search | `aggregate` with `$unwind` and two `$match` | One `find` |
+| Duplication | Trip data per destination (T-OK in A and C) | Same, plus route, price and currency repeated in every document |
+| Cancel T-OK | 2 documents, needs `arrayFilters` | 2 documents, plain `$set` |
+| Change price | 4 documents | One per departure on the route |
+| Growth | The array grows, and the whole document is rewritten on every change | Fixed-size documents. Growth means more documents, not larger ones |
+
+**Takeaways**
+
+- Splitting documents does not remove duplication. A trip that can be searched for two destinations is still stored twice.
+- Updates become simpler and cheaper per document, but changes to route-level data such as price touch more documents.
+
+**Choice**
+
+I would continue with `journey_search_by_trip`. Documents stay small and fixed-size, growth only adds documents, and per-departure data that changes often, such as `availableSeats`, can be updated without rewriting a large document. Before next week it needs a `$jsonSchema` validator, which is simpler than before because the structure is flat, and an index on `{ cityId, fromStopId, toStopId, departureUtc }` for the search.
