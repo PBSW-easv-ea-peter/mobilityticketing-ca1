@@ -155,7 +155,21 @@ updateMany(
 
 ## 5. How large can the document get?
 
-_TODO_
+`growth.js` copies `LAB05:A` to `LAB05:GROWTH` with N copies of the first departure and measures it with `$bsonSize`.
+
+| Departures | Bytes |
+|---|---|
+| 100 | 12,307 |
+| 1,000 | 123,007 |
+
+The 900 extra departures added 110,700 bytes, about 123 bytes each. Growth is almost linear. The total is slightly under 10x because the fixed part of the document (~227 bytes) does not grow, but each departure gets slightly larger as the count grows: BSON stores array indexes as string keys (`"0"` … `"999"`), and the generated `tripId` also gets longer.
+
+At ~123 bytes per departure, the 16 MB document limit allows about 136,000 departures. The limit is not the real problem, though. Every update (e.g. a cancellation) rewrites the whole document, and every search loads it, even if only a few departures match.
+
+**Decision**
+
+- Split documents by route and service day. This puts a natural upper bound on each document and keeps a search to one or a few documents.
+- If the model must also track seats per departure, use one document per departure instead (part 6). `availableSeats` changes on every booking, and in the embedded model every booking would rewrite a large document, and every duplicated copy of it (see part 4).
 
 ## 6. One departure per document
 
