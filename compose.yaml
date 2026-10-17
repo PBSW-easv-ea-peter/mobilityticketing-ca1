@@ -14,6 +14,7 @@ services:
       interval: 2s
       timeout: 3s
       retries: 15
+
   mongo:
     image: mongo:8.0
     ports:
@@ -27,5 +28,14 @@ services:
       timeout: 5s
       retries: 30
       start_period: 5s
+  
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "127.0.0.1:6379:6379"
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    volumes:
+      - ./database/redis:/scripts:ro
+
 volumes:
   mobility-mongo:
