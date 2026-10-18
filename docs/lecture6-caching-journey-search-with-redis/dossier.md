@@ -121,3 +121,54 @@ Evening key: same with `18:00`–`19:00`.
 After Test C the key had a new TTL of 20 s. After each Test D case the invalid value was replaced by a valid entry. The tests run automatically from `Program.cs`. The lab's `redis-cli` steps are done through StackExchange.Redis: `DEL` → `KeyDeleteAsync`, `EXPIRE key 1` → `KeyExpireAsync`, `SET key value EX 20` → `StringSetAsync`, and waiting for TTL -2 → polling `KeyExistsAsync`.
 
 **Observation:** only the first request is noticeably slow (115 ms). That is startup cost (connections, JIT), not the query itself. Locally, with a tiny dataset, a hit and a miss take almost the same time. The measurable gain here is fewer MongoDB calls, not milliseconds.
+
+## 5. Cancel a cached departure
+
+### Cancellation in MongoDB
+The cancellation is last week's update from `updates.js.example`, saved as `database/mongodb/lecture06/cancel.js`. It lives under `mongodb/` because only that folder is mounted as `/scripts` in the mongo container.
+
+The update works in three parts:
+- The filter (`_id: /^LAB05:/`, `"departures.tripId": "LAB05-T-OK"`) selects which documents to update: `LAB05:A` and `LAB05:C`.
+- `"departures.$[trip].status": "Cancelled"` sets the status on every array element that matches `trip`.
+- `arrayFilters: [{ "trip.tripId": "LAB05-T-OK" }]` defines what `trip` means. It is not a separate step, only the condition `$[trip]` refers to.
+
+The positional `$` would only update the first matching element in each document. `$[trip]` updates all of them.
+
+`LAB05:C` has a different `toStopId`, so it is not part of the morning search. It is still cancelled, because a cancellation applies to the trip, not to a search.
+
+| Step | Result |
+|---|---|
+| `reset.js` | 6 fixture documents |
+| Uncached search before | LAB05-T-OK |
+| `cancel.js` 1st run | matched 2, modified 2 |
+| `cancel.js` 2nd run | matched 2, modified 0 (idempotent) |
+| Uncached search after | `[]` |
+
+MongoDB is now correct, but Redis knows nothing about the change. The rest of this task shows what that means for a cached search.
+
+### Cached search after the cancellation
+Expiry temporarily set to 5 minutes with `dotnet run -- morning`, which runs one cached search and skips the tests. Each run is a new process, so `mongoCalls` starts at 0.
+
+| Step | Search | Source | Trips | MongoDB calls |
+|---|---|---|---|---|
+| 3 | Cached, before cancellation | MongoDB (`miss`) | LAB05-T-OK | +1 |
+| 5 | Uncached, after cancellation | MongoDB | `[]` | – |
+| 6 | Cached, before expiry or deletion | Redis (`hit`) | **LAB05-T-OK** | +0 |
+| 8 | Cached, after `DEL` | MongoDB (`miss`) | `[]` | +1 |
+
+At step 6 the key had 296 s left (`TTL`). `DEL` returned 1 at step 7. Afterwards the expiry is back at 20 s (no-args run), and MongoDB is reset with `reset.js`.
+
+Removing a cached value that should no longer be used is called **cache invalidation**.
+
+### What the passenger saw
+Before the deletion the passenger was shown LAB05-T-OK as a departure they could take, even though it was cancelled. Without the `DEL` that would have lasted up to the full expiry (here almost 5 minutes, normally 20 s). After the deletion the next search missed, read MongoDB and showed no departures, which is correct. The expiry is the upper limit for how long a stale result can live. Invalidation makes it shorter.
+
+### If MongoDB had not yet received the cancellation
+If the key is deleted *before* MongoDB has the cancellation, the next search misses, reads the old data from MongoDB and stores LAB05-T-OK in Redis again with a fresh expiry. The `DEL` did nothing, and the stale result lives for a full expiry. Invalidation only works when it happens *after* the source of truth has been updated.
+
+### Race: an in-progress search writes an old result back (quiz 6)
+1. Search S misses and reads MongoDB: LAB05-T-OK.
+2. The cancellation is written to MongoDB, and the key is deleted.
+3. S, which is still running, stores its old result with `SET ... EX`.
+
+The key now holds the cancelled trip again, even though both the update and the `DEL` were done in the right order. Cache-aside has no link between "what I read" and "what I write". The race is not solved here. The expiry still limits how long the error lasts.

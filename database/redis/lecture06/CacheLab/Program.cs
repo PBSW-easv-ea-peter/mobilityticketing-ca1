@@ -59,7 +59,10 @@ options.ConnectRetry = 1;
 
 using var redis = await ConnectionMultiplexer.ConnectAsync(options);
 var cache = redis.GetDatabase();
-var cached = new CachedJourneySearch(cache, source, TimeSpan.FromSeconds(20));
+// "dotnet run -- morning" runs one cached search with a longer expiry (task 5)
+var singleMorning = args is ["morning"];
+var cacheTtl = singleMorning ? TimeSpan.FromMinutes(5) : TimeSpan.FromSeconds(20);
+var cached = new CachedJourneySearch(cache, source, cacheTtl);
 
 var morningKey = CacheKeys.Search(morning);
 var eveningKey = CacheKeys.Search(evening);
@@ -78,6 +81,13 @@ async Task<(int Calls, List<Journey> Items)> Run(string label, SearchRequest q)
 }
 
 static void Check(string name, bool ok) => Console.WriteLine($"{(ok ? "PASS" : "FAIL")}  {name}");
+
+if (singleMorning)
+{
+    Console.WriteLine($"Single search   key={morningKey}   ttl={cacheTtl}");
+    await Run("morning", morning);
+    return;
+}
 
 Console.WriteLine();
 Console.WriteLine("Task 4: Test the cached search");
