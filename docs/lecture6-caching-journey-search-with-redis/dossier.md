@@ -172,3 +172,20 @@ If the key is deleted *before* MongoDB has the cancellation, the next search mis
 3. S, which is still running, stores its old result with `SET ... EX`.
 
 The key now holds the cancelled trip again, even though both the update and the `DEL` were done in the right order. Cache-aside has no link between "what I read" and "what I write". The race is not solved here. The expiry still limits how long the error lasts.
+
+## 6. Stop Redis
+
+Run with `dotnet run -- morning` (one cached search). Times are measured inside the program around the search.
+
+| Test | Services down | Output | Time |
+|---|---|---|---|
+| A (default backlog) | Redis | `cache unavailable`, `cache write failed`, LAB05-T-OK from MongoDB | 11997 ms |
+| A (`BacklogPolicy.FailFast`) | Redis | same | ~120 ms |
+| B (no error handling) | Redis + MongoDB | unhandle selection 2 s), program crashed | ~12 s |
+| B (with `search error`) | Redis + MongoDB | `search error after 2060 ms: TimeoutException ...` | 2060 ms |
+
+### Redis unavailable
+The search still works. Both Redis calls (GET and SET) fail and are caught, and the result comes from MongoDB. With the default settings it took 12 s, even though `AsyncTimeout` is 500 ms. While disconnected, StackExchange.Redis queues commands in a backlog and waits for the connection to come back. `BacklogPolicail at once, which brought the time down to ~120 ms. A timeout setting alone does not guarantee a fast fallback. For a cache, failing fast is the right trade-off, because MongoDB is the source of truth anyway.
+
+### Redis and MongoDB unavailable
+`CachedJourneySearch` only catches Redis errors. The MongoDB call is deliberately not wrapped, so its `TimeoutException` reaches `Program.cs`, which reports `search error`. Catchingturning `[]` would be a silent failure: the passenger would be told there are no departures, when in fact the search failed. Note that both drivers throw `TimeoutException`, so the Redis catch blocks must stay around the Redis calls only.

@@ -56,6 +56,8 @@ options.AbortOnConnectFail = false;
 options.ConnectTimeout = 500;
 options.AsyncTimeout = 500;
 options.ConnectRetry = 1;
+// Fail at once while disconnected instead of queueing commands until Redis is back (task 6)
+options.BacklogPolicy = BacklogPolicy.FailFast;
 
 using var redis = await ConnectionMultiplexer.ConnectAsync(options);
 var cache = redis.GetDatabase();
@@ -85,7 +87,16 @@ static void Check(string name, bool ok) => Console.WriteLine($"{(ok ? "PASS" : "
 if (singleMorning)
 {
     Console.WriteLine($"Single search   key={morningKey}   ttl={cacheTtl}");
-    await Run("morning", morning);
+    // Task 6: a failed search is reported, never shown as an empty result
+    var total = Stopwatch.StartNew();
+    try
+    {
+        await Run("morning", morning);
+    }
+    catch (Exception e)
+    {
+        Console.WriteLine($"search error after {total.ElapsedMilliseconds} ms: {e.GetType().Name}: {e.Message.Split(" using ")[0]}");
+    }
     return;
 }
 
