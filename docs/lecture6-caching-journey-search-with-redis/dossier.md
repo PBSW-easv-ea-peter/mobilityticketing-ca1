@@ -151,3 +151,45 @@ Run with `dotnet run -- morning`. Times are measured inside the program around t
 **Redis unavailable:** the search still works. Both Redis calls (GET and SET) fail and are caught, and the result comes from MongoDB. With default settings it took 12 s, despite `AsyncTimeout = 500`, because StackExchange.Redis queues commands in a backlog while disconnected and waits for the connection to return. `BacklogPolicy.FailFast` makes commands fail at once (~120 ms). A timeout setting alone does not guarantee a fast fallback. For a cache, failing fast is the right trade-off, because MongoDB is the source of truth anyway.
 
 **Redis and MongoDB unavailable:** `CachedJourneySearch` only catches Redis errors. The MongoDB call is deliberately not wrapped, so its `TimeoutException` reaches `Program.cs`, which reports `search error`. Catching it inside the search and returning `[]` would be a silent failure: the passenger would be told there are no departures, when in fact the search failed. Both drivers throw `TimeoutException`, so the Redis catch blocks must stay around the Redis calls only.
+
+## 7. Send several searches at once
+
+Run with `dotnet run -- concurrent`: deletes the morning key, adds a 200 ms delay before the MongoDB query (only in this mode) and sends ten identical searches with `Task.WhenAll`, twice.
+
+| Batch | Output | MongoDB calls | Time |
+|---|---|---|---|
+| 1 (empty cache) | 10 × `miss` | +10 | 352 ms |
+| 2 (within TTL) | 10 × `hit` | +0 | 12 ms |
+
+The requests are not merged; they are ten independent searches running at the same time (352 ms, not 10 × 200 ms). All ten GETs happen before the first SET, about 200 ms later, so every request sees an empty cache and queries MongoDB (a *cache stampede*). Each then writes the same key, and the last write wins. That is harmless here because the values are identical, but on a popular key with a slow query it multiplies the database load exactly when the cache is empty. Not implemented: a per-key in-flight lock (e.g. `ConcurrentDictionary<string, Lazy<Task<...>>>`) would let one request query MongoDB while the others await its result.
+
+## 8. Try a seat counter
+
+| Step | Command | Result |
+|---|---|---|
+| Two trips, same route/date | `MGET ...TRIP-ONE ...TRIP-TWO` | `0`, `10` |
+| Missing vs zero | `DEL` + `GET ...TRIP-TWO` / `GET ...TRIP-ONE` | `(nil)` / `"0"` |
+| One seat left, script twice | `SET ...TRIP-ONE 1`, `--eval` ×2 | `0`, then `-1` (value stays 0) |
+| Key deleted, script | `--eval` | `availability unknown` |
+
+**Key per trip:** a route runs many trips per day, each with its own seats. One route/date key holds one number, so it cannot say "0 on one trip, 10 on another"; a sum would sell seats on a full trip. The key must contain `tripId`.
+
+**Missing vs zero:** `0` is a known fact: the trip is sold out. A missing key means Redis does not know (expired, deleted or never loaded), so the answer must come from PostgreSQL. Treating missing as 0 would show available trips as sold out. The script keeps them apart: `-1` for sold out, an error for unknown.
+
+**Counter vs purchase:** the Lua script runs atomically, so no other request can change the value between GET and DECR, and the count never goes below 0. But it only changed a number in Redis, which here has no persistence. No seat was reserved in PostgreSQL, no ticket created and no payment taken. A purchase needs one PostgreSQL transaction. The Redis counter is only a fast hint that can drift and must be rebuilt from PostgreSQL.
+
+## 9. Decide what belongs in Redis
+
+SET/GET/TTL/DEL worked for `route:LAB06:CPH:LINE-M2` and `stop:LAB06:CPH:STOP-NORREPORT` (TTL 86399 right after SET). Note: Windows PowerShell 5.1 strips `"` from arguments to native programs, so the first attempt stored `{routeId:LINE-M2,...}`, which is not JSON. Every quote must be written as `\"`. A cache reading such a value would treat it as invalid.
+
+| Data | Example key → value | Source | Expiry | Updated / deleted by | If Redis has no usable copy |
+|---|---|---|---|---|---|
+| Search results | `search:LAB06:v2:CPH:STOP-NORREPORT:STOP-AIRPORT:<start>:<end>` → `{"schemaVersion":2,"cachedAtUtc":…,"items":[…]}` | MongoDB `journey_search` | 2 min | Written by the search on a miss; deleted when a departure is cancelled (section 5) | MongoDB |
+| Trip availability | `availability:LAB06:<tripId>` → `10` | PostgreSQL (trips/tickets) | Until departure | Decremented by the purchase flow after the PostgreSQL commit; deleted on cancellation | PostgreSQL. Never assume 0 |
+| Route information | `route:LAB06:CPH:LINE-M2` → `{"routeId":"LINE-M2","name":"M2",…}` | PostgreSQL `routes` | 24 h | Deleted by the admin/timetable import when the route changes | PostgreSQL |
+| Stop information | `stop:LAB06:CPH:STOP-NORREPORT` → `{"stopId":"STOP-NORREPORT","name":"Nørreport"}` | PostgreSQL `stops` | 24 h | Deleted by the admin/timetable import when the stop changes | PostgreSQL |
+
+**Expiry:** 24 h is fine for routes and stops; they rarely change and are deleted explicitly when they do. 30 minutes is too long for search results: cancellations are deleted explicitly, but `availableSeats` is part of the result and changes with every purchase without deleting the key. I would try about 2 minutes, so a burst of identical searches is still served from Redis. The result can still be out of date within those 2 minutes (seats sold, delays), so the purchase must always check PostgreSQL. 8 h for a route/day seat count is wrong twice: the key must be per trip (section 8), and a count that old is useless.
+
+**Two passengers a minute apart** share an entry only if they send exactly the same city, stops, start and end, since the key holds no passenger data. If the app searches "from now", the start differs by a minute, the keys differ and nothing is shared. Rounding the start down (e.g. to 5 minutes) and filtering departed trips after reading the cache would fix that.
+

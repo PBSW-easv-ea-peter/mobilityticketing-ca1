@@ -86,6 +86,7 @@ static void Check(string name, bool ok) => Console.WriteLine($"{(ok ? "PASS" : "
 
 if (singleMorning)
 {
+    
     Console.WriteLine($"Single search   key={morningKey}   ttl={cacheTtl}");
     // Task 6: a failed search is reported, never shown as an empty result
     var total = Stopwatch.StartNew();
@@ -96,6 +97,21 @@ if (singleMorning)
     catch (Exception e)
     {
         Console.WriteLine($"search error after {total.ElapsedMilliseconds} ms: {e.GetType().Name}: {e.Message.Split(" using ")[0]}");
+    }
+    return;
+}
+
+// "dotnet run -- concurrent" sends ten identical searches at once (task 7)
+if (args is ["concurrent"])
+{
+    source.DelayMilliseconds = 200; // artificial delay, only in this mode
+    await cache.KeyDeleteAsync(morningKey);
+    for (var batch = 1; batch <= 2; batch++)
+    {
+        var before = cached.MongoCalls;
+        var sw = Stopwatch.StartNew();
+        await Task.WhenAll(Enumerable.Range(0, 10).Select(_ => cached.Search(morning)));
+        Console.WriteLine($"Batch {batch}: 10 searches, mongoCalls=+{cached.MongoCalls - before}  {sw.ElapsedMilliseconds} ms");
     }
     return;
 }
