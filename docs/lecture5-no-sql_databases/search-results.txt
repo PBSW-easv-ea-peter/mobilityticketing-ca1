@@ -1,0 +1,9 @@
+PASS  Nørreport to Airport, 06:00-07:00: ["LAB05-T-OK"]
+PASS  End at 06:20: []
+PASS  Start at 06:20: ["LAB05-T-OK"]
+PASS  Airport to Nørreport: ["LAB05-T-E"]
+PASS  Same search on 3 October: ["LAB05-T-F"]
+PASS  Destination STOP-NO-MATCH: []
+PASS  Nørreport to Central: ["LAB05-T-OK"]
+PASS  end <= start: rejected (start and end must be dates with end > start)
+PASS  empty stop ID: rejected (cityId, fromStopId and toStopId are required)
