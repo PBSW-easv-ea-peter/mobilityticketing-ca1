@@ -194,4 +194,4 @@ The search needs no `$unwind`. A single `find` with filter, projection and `sort
 
 **Choice**
 
-I would continue with `journey_search_by_trip`. Documents stay small and fixed-size, growth only adds documents, and per-departure data that changes often, such as `availableSeats`, can be updated without rewriting a large document. Before next week it needs a `$jsonSchema` validator, which is simpler than before because the structure is flat, and an index on `{ cityId, fromStopId, toStopId, departureUtc }` for the search.
+We would continue with `journey_search_by_trip`. Documents stay small and fixed-size, growth only adds documents, and per-departure data that changes often, such as `availableSeats`, can be updated without rewriting a large document. Before next week it needs a `$jsonSchema` validator, which is simpler than before because the structure is flat, and an index on `{ cityId, fromStopId, toStopId, departureUtc }` for the search.

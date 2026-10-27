@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Text.Json;
 using StackExchange.Redis;
 
@@ -9,35 +10,65 @@ public sealed class CachedJourneySearch(IDatabase cache, MongoJourneySearch sour
     {
         RespectNullableAnnotations = true
     };
+    // One lock per cache key, so only one request per search goes to MongoDB on a miss (task 7)
+    readonly ConcurrentDictionary<string, SemaphoreSlim> gates = new();
+
     public async Task<List<Journey>> Search(SearchRequest q)
     {
         string key = CacheKeys.Search(q);
-        RedisValue raw = RedisValue.Null;
-        bool _redisOnline = false;
+        var (entry, redisOnline) = await ReadCache(key);
+        if (entry is not null)
+        {
+            Console.WriteLine("hit");
+            return entry.Items;
+        }
+
+        // Without Redis the waiting requests could not read the result anyway, so skip the lock
+        if (!redisOnline) return await FetchAndStore(key, q);
+
+        var gate = gates.GetOrAdd(key, _ => new SemaphoreSlim(1, 1));
+        await gate.WaitAsync();
+        try
+        {
+            // Another request may have stored the result while this one was waiting
+            (entry, _) = await ReadCache(key, log: false);
+            if (entry is not null)
+            {
+                Console.WriteLine("hit after waiting");
+                return entry.Items;
+            }
+            return await FetchAndStore(key, q);
+        }
+        finally
+        {
+            gate.Release();
+        }
+    }
+
+    private async Task<(CacheEntry? Entry, bool RedisOnline)> ReadCache(string key, bool log = true)
+    {
+        RedisValue raw;
         try // GET key
         {
             raw = await cache.StringGetAsync(key);
-            _redisOnline = true;
         } catch(Exception e) when (e is RedisException or TimeoutException) //→ "cache unavailable", gå videre til MongoDB
         {
-            _redisOnline = false;
-            Console.WriteLine("cache unavailable");
+            if (log) Console.WriteLine("cache unavailable");
+            return (null, false);
         }
 
-        if (!raw.IsNull)
+        if (raw.IsNull)
         {
-            var entry = TryRead(raw!);
-            if (entry is not null)
-            {
-                Console.WriteLine("hit");
-                return entry.Items;
-            }
-            Console.WriteLine("invalid");
+            if (log) Console.WriteLine("miss");
+            return (null, true);
         }
-        else if (_redisOnline)
-        {
-            Console.WriteLine("miss");
-        }
+        var entry = TryRead(raw!);
+        if (entry is null && log) Console.WriteLine("invalid");
+        return (entry, true);
+    }
+
+    private async Task<List<Journey>> FetchAndStore(string key, SearchRequest q)
+    {
         List<Journey> items = await source.Fetch(q);
 
         try

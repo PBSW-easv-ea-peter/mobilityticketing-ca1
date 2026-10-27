@@ -71,7 +71,7 @@ docker compose exec -T -e START=2026-10-02T06:00:00Z -e END=2026-10-02T07:00:00Z
 
 **Why the offset is removed but the instant is kept:** `06:00Z` and `08:00+02:00` are the same moment and must share a key. The instant itself changes the result, so it must stay in the key.
 
-**Takeaway:** my first version had the helpers but did not use them. `{q.Start}` used the da-DK culture and kept the offset, so equal searches got different keys, and the unescaped IDs could collide.
+**Takeaway:** our first version had the helpers but did not use them. `{q.Start}` used the da-DK culture and kept the offset, so equal searches got different keys, and the unescaped IDs could collide.
 
 ## 3. Cache the journey search
 
@@ -80,8 +80,9 @@ docker compose exec -T -e START=2026-10-02T06:00:00Z -e END=2026-10-02T07:00:00Z
 1. Build the key with `CacheKeys.Search` (this also validates the request).
 2. `GET` the key. If Redis fails, print `cache unavailable` and continue to MongoDB.
 3. Valid value → `hit`, return the items without calling MongoDB. Invalid value → `invalid`, treated as a miss. No value → `miss`.
-4. Call MongoDB. A MongoDB failure is **not** caught: the search fails visibly instead of returning `[]`.
-5. Store the whole result with `StringSetAsync(key, json, ttl)` (value and 20 s expiry in one command). A failed write is logged, and the MongoDB result is still returned.
+4. On a miss, take a per-key lock and read the cache again before calling MongoDB, so concurrent identical searches only query MongoDB once (section 7).
+5. Call MongoDB. A MongoDB failure is **not** caught: the search fails visibly instead of returning `[]`.
+6. Store the whole result with `StringSetAsync(key, json, ttl)` (value and 20 s expiry in one command). A failed write is logged, and the MongoDB result is still returned.
 
 Redis failures are caught as `RedisException` **or** `TimeoutException`: `RedisTimeoutException` inherits from `System.TimeoutException`, not `RedisException`, so catching only `RedisException` would let a slow Redis crash the search.
 
@@ -89,7 +90,7 @@ Cached value: `{"schemaVersion":2,"cachedAtUtc":"<now, UTC>","items":[...]}`
 
 A value is valid only if it is readable JSON, `schemaVersion` is 2, `cachedAtUtc` is set, and `items` is an array without `null` elements. `[JsonRequired]` on `Journey` makes every field mandatory, and `RespectNullableAnnotations = true` also rejects `null` in non-nullable fields (`[JsonRequired]` alone only checks presence). An empty result is cached too.
 
-**Takeaway:** my first draft stored each journey separately in a loop. The key represents the whole search, so the value must be the whole result. With a loop, an empty result would never be cached.
+**Takeaway:** our first draft stored each journey separately in a loop. The key represents the whole search, so the value must be the whole result. With a loop, an empty result would never be cached.
 
 ## 4. Test the cached search
 
@@ -156,12 +157,32 @@ Run with `dotnet run -- morning`. Times are measured inside the program around t
 
 Run with `dotnet run -- concurrent`: deletes the morning key, adds a 200 ms delay before the MongoDB query (only in this mode) and sends ten identical searches with `Task.WhenAll`, twice.
 
+### Without a lock
+
 | Batch | Output | MongoDB calls | Time |
 |---|---|---|---|
 | 1 (empty cache) | 10 × `miss` | +10 | 352 ms |
 | 2 (within TTL) | 10 × `hit` | +0 | 12 ms |
 
-The requests are not merged; they are ten independent searches running at the same time (352 ms, not 10 × 200 ms). All ten GETs happen before the first SET, about 200 ms later, so every request sees an empty cache and queries MongoDB (a *cache stampede*). Each then writes the same key, and the last write wins. That is harmless here because the values are identical, but on a popular key with a slow query it multiplies the database load exactly when the cache is empty. Not implemented: a per-key in-flight lock (e.g. `ConcurrentDictionary<string, Lazy<Task<...>>>`) would let one request query MongoDB while the others await its result.
+The requests are not merged; they are ten independent searches running at the same time (352 ms, not 10 × 200 ms). All ten GETs happen before the first SET, about 200 ms later, so every request sees an empty cache and queries MongoDB (a *cache stampede*). Each then writes the same key, and the last write wins. That is harmless here because the values are identical, but on a popular key with a slow query it multiplies the database load exactly when the cache is empty.
+
+### With a per-key lock
+
+The idea comes from Sander's solution. `CachedJourneySearch` keeps a `ConcurrentDictionary<string, SemaphoreSlim>` with one `SemaphoreSlim(1, 1)` per cache key. On a miss, a request waits for the key's lock and then **reads the cache again** (double-check) before calling MongoDB. The first request queries MongoDB and stores the result. The others get the lock one at a time, find the stored value and return it (`hit after waiting`). The lock lives in the cache layer, so `MongoJourneySearch` still knows nothing about Redis.
+
+| Batch | Output | MongoDB calls | Time |
+|---|---|---|---|
+| 1 (empty cache) | 10 × `miss`, 9 × `hit after waiting` | +1 | 374 ms |
+| 2 (within TTL) | 10 × `hit` | +0 | 1 ms |
+
+The time is about the same as without the lock: all ten still wait for the one 200 ms query. The gain is MongoDB load (+1 instead of +10). Test A–D from section 4 still pass, because sequential searches never wait for the lock.
+
+**Redis unavailable:** the lock is skipped. Without a cache, waiting gives nothing, because the waiting requests cannot read the result. With the lock, they would query MongoDB one after another (about 10 × 200 ms), which is slower than the stampede. Without Redis the ten searches therefore go to MongoDB in parallel. We could not measure this with `dotnet run -- concurrent`, because `Program.cs` deletes the key with `KeyDeleteAsync` before the batch, and that call fails without Redis.
+
+**Limitations:**
+- The lock only works inside one process. Several app instances would each query MongoDB once. A distributed lock (e.g. Redis `SET key value NX PX`) would be needed across instances.
+- Locks are never removed from the dictionary, so there is one `SemaphoreSlim` per search ever made. That is fine for the lab, but a long-running service would need cleanup.
+- The waiting requests get the lock one at a time, so each re-reads Redis in turn. An alternative is to share one `Task` per key (`ConcurrentDictionary<string, Lazy<Task<...>>>`): all waiting requests await the same result in memory, without re-reading Redis.
 
 ## 8. Try a seat counter
 
@@ -189,7 +210,7 @@ SET/GET/TTL/DEL worked for `route:LAB06:CPH:LINE-M2` and `stop:LAB06:CPH:STOP-NO
 | Route information | `route:LAB06:CPH:LINE-M2` → `{"routeId":"LINE-M2","name":"M2",…}` | PostgreSQL `routes` | 24 h | Deleted by the admin/timetable import when the route changes | PostgreSQL |
 | Stop information | `stop:LAB06:CPH:STOP-NORREPORT` → `{"stopId":"STOP-NORREPORT","name":"Nørreport"}` | PostgreSQL `stops` | 24 h | Deleted by the admin/timetable import when the stop changes | PostgreSQL |
 
-**Expiry:** 24 h is fine for routes and stops; they rarely change and are deleted explicitly when they do. 30 minutes is too long for search results: cancellations are deleted explicitly, but `availableSeats` is part of the result and changes with every purchase without deleting the key. I would try about 2 minutes, so a burst of identical searches is still served from Redis. The result can still be out of date within those 2 minutes (seats sold, delays), so the purchase must always check PostgreSQL. 8 h for a route/day seat count is wrong twice: the key must be per trip (section 8), and a count that old is useless.
+**Expiry:** 24 h is fine for routes and stops; they rarely change and are deleted explicitly when they do. 30 minutes is too long for search results: cancellations are deleted explicitly, but `availableSeats` is part of the result and changes with every purchase without deleting the key. We would try about 2 minutes, so a burst of identical searches is still served from Redis. The result can still be out of date within those 2 minutes (seats sold, delays), so the purchase must always check PostgreSQL. 8 h for a route/day seat count is wrong twice: the key must be per trip (section 8), and a count that old is useless.
 
 **Two passengers a minute apart** share an entry only if they send exactly the same city, stops, start and end, since the key holds no passenger data. If the app searches "from now", the start differs by a minute, the keys differ and nothing is shared. Rounding the start down (e.g. to 5 minutes) and filtering departed trips after reading the cache would fix that.
 
