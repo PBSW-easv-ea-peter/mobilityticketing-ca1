@@ -480,3 +480,10 @@ $RECYCLE.BIN/
 
 # Vim temporary swap files
 *.swp
+
+# Lecture 7
+TestResults/
+docs/evidence/lecture07/logs/*
+!docs/evidence/lecture07/logs/
+!docs/evidence/lecture07/logs/.gitkeep
+docs/evidence/lecture07/tests/

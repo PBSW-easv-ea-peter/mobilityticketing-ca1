@@ -78,4 +78,20 @@ Migrationen anvender desuden `NOT VALID` på foreign key-constrainten, så const
 
 ---
 
+## Uge 7 – Route overview (EF Core)
+
+Opgaven: [`docs/lecture7-route-overview/lab.md`](docs/lecture7-route-overview/lab.md). Krav: [`contract.md`](docs/lecture7-route-overview/contract.md). Designnote: [`design.md`](docs/lecture7-route-overview/design.md). Målinger: [`docs/evidence/lecture07/README.md`](docs/evidence/lecture07/README.md).
+
+Lecture 7 har sin egen database (`postgres-l07`, database `mobility_l07`, schema `lab07`) og kører via Docker (.NET 8 SDK i imaget).
+
+### TODO
+- [ ] Start databasen: `docker compose up -d --wait postgres-l07`.
+- [ ] Byg app og tests: `docker compose build app tests` (også efter ændringer i kode eller SQL).
+- [ ] Nulstil fixturen: `docker compose run --rm app reset`.
+- [ ] Kør lazy-baseline: `docker compose run --rm app baseline` (SQL og resultat gemmes i `docs/evidence/lecture07/logs/`).
+- [ ] Kør tests: `docker compose run --rm tests --filter Category=Starter` (også `Acceptance` og `Student`).
+- [ ] Mere data: `docker compose run --rm app scale` (200 ruter / 100.000 trips).
+
+---
+
 Vores arbejde for de enkelte uger kan findes i `docs`, og PROGRESSION.md forklarer udviklingen.
