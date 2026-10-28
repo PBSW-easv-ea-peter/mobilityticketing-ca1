@@ -121,5 +121,8 @@ After publish, cancel T102 and rename R1, the live row is City Ring / 1 / 06:20 
 
 **Takeaway:** the baseline scales with the data, the projection does not. At 100,000 trips the baseline loads every trip into memory to show 200 numbers.
 
-**Still open:**
-- [ ] At least four tests of our own in `StudentTests.cs`, including a failure or concurrency case.
+**Own tests** (`StudentTests.cs`, 51/51 with the acceptance tests):
+- Two different plans published concurrently keep their own window and rows (concurrency).
+- A new plan after cancel and rename records the changed values; the earlier plan is unchanged.
+- Two bookings with different request IDs on the same trip both succeed; the row lock waits instead of rejecting (concurrency).
+- A window of exactly 24 hours is accepted, 24 hours + 1 µs is rejected without writing anything (failure, boundary value).

@@ -73,6 +73,6 @@ Run after `reset`, window 23 October 2026 06:00–07:00 UTC.
 
 ## Tests
 
-The supplied acceptance tests in `tests/MobilityTicketing.Lecture07.Tests/` pass: 47 passed, 0 failed (`docker compose --profile l07 run --rm --build tests`). Our own tests in `StudentTests.cs` are still to be written.
+All tests in `tests/MobilityTicketing.Lecture07.Tests/` pass: 51 passed, 0 failed (`docker compose --profile l07 run --rm --build tests`) — the 47 supplied acceptance tests plus four of our own in `StudentTests.cs`: concurrent publication of two different plans, a new plan recording values after cancel and rename, concurrent bookings with different request IDs on one trip, and the 24-hour window boundary (exact vs. +1 µs).
 
 The design sketch and explanation are in [`docs/lecture7-route-overview/design.md`](../../lecture7-route-overview/design.md), and the full write-up is in [`dossier.md`](../../lecture7-route-overview/dossier.md).
