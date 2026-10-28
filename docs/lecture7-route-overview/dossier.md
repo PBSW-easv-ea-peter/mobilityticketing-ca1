@@ -109,8 +109,17 @@ The tables are created by `reset` (`FixtureReset` runs `01`, `03`, `02`) and by 
 
 The supplied acceptance tests pass: **47 passed, 0 failed** (`docker compose --profile l07 run --rm --build tests`).
 
+The CLI scenario and the measurements are in [`docs/evidence/lecture07/README.md`](../evidence/lecture07/README.md).
+
+| Read | 4 routes / 9 trips | 200 routes / 100,000 trips |
+|---|---|---|
+| Baseline (lazy) | 5 reads, 4 routes, 9 trips | 201 reads, 200 routes, 100,000 trips |
+| Live board (projection) | 1 read, 0 entities | 1 read, 0 entities |
+| Published plan | 1 read, 0 route/trip entities | – |
+
+After publish, cancel T102 and rename R1, the live row is City Ring / 1 / 06:20 while the `morning` plan still shows City Loop / 2 / 06:00. A new booking for T102 is rejected, and a new plan records the changed values. `book T201 campus-1` twice returns the same receipt and leaves one booking, and `morning` for 07:00–08:00 reports a conflict.
+
+**Takeaway:** the baseline scales with the data, the projection does not. At 100,000 trips the baseline loads every trip into memory to show 200 numbers.
+
 **Still open:**
-- [ ] CLI scenario: `reset`, publish, cancel T102, rename R1 to "City Ring". Live should show City Ring / 1 / 06:20, and the earlier plan City Loop / 2 / 06:00. A new booking for T102 must be rejected, and a new plan must record the changed values.
-- [ ] `book T201 campus-1` twice gives the same receipt and one booking. `morning` for 07:00–08:00 reports a conflict.
-- [ ] Baseline vs live at 4 / 9 and 200 / 100,000: executed reads, entities and SQL in `docs/evidence/lecture07/README.md`.
 - [ ] At least four tests of our own in `StudentTests.cs`, including a failure or concurrency case.
