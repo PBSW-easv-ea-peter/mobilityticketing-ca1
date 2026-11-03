@@ -94,4 +94,20 @@ Lecture 7 har sin egen database (`postgres-l07`, database `mobility_l07`, schema
 
 ---
 
+## Uge 8 – Query optimization
+
+Opgaven: [`docs/lecture8-query-optimization/lab.md`](docs/lecture8-query-optimization/lab.md). Starterens README: [`starter-README.md`](docs/lecture8-query-optimization/starter-README.md). Evidence: [`docs/evidence/lecture08/evidence.md`](docs/evidence/lecture08/evidence.md).
+
+Lecture 8 har sin egen database (`postgres-l08`, database `mobility_l08`, schema `lab08`, ingen host-port). Vi arbejder i `database/postgres/lecture08/queries/candidate.sql` og `indexes.sql`; `run.sh`, `setup.sql` og `baseline.sql` holdes uændrede.
+
+### TODO
+- [ ] Start databasen: `docker compose up -d --wait postgres-l08`.
+- [ ] Nulstil fixturen: `docker compose exec -T postgres-l08 bash /lab/run.sh reset`.
+- [ ] Kør og tjek: `docker compose exec -T postgres-l08 bash /lab/run.sh run baseline R-7` og `... run.sh check`.
+- [ ] Mål: `docker compose exec -T postgres-l08 bash /lab/run.sh measure baseline R-7 > docs/evidence/lecture08/baseline-r7.txt` (også `R-0` og `candidate`).
+- [ ] Indexes: `docker compose exec -T postgres-l08 bash /lab/run.sh indexes`.
+- [ ] Partitioning: `docker compose exec -T postgres-l08 bash /lab/run.sh partitions > docs/evidence/lecture08/partition-plans.txt`.
+
+---
+
 Vores arbejde for de enkelte uger kan findes i `docs`, og PROGRESSION.md forklarer udviklingen.
