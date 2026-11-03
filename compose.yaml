@@ -74,6 +74,25 @@ services:
       LAB_TEST_CONNECTION: Host=postgres-l07;Database=mobility_l07_test;Username=${POSTGRES_USER:-mobility};Password=${POSTGRES_PASSWORD:-mobility}
     volumes: ["./docs/evidence/lecture07:/evidence"]
 
+  postgres-l08:
+    profiles: ["l08"]
+    image: postgres:17-bookworm@sha256:3645570cccdfa447589da9f57dd740faa29b30938e861289a5574b6ca6b03826
+    environment:
+      POSTGRES_DB: mobility_l08
+      POSTGRES_USER: mobility
+      POSTGRES_PASSWORD: mobility
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mobility -d mobility_l08"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+    volumes:
+      - mobility-l08-data:/var/lib/postgresql/data
+      - ./database/postgres/lecture08/run.sh:/lab/run.sh:ro
+      - ./database/postgres/lecture08/setup.sql:/lab/database/setup.sql:ro
+      - ./database/postgres/lecture08/queries:/lab/queries:ro
+
 volumes:
   mobility-mongo:
   mobility-l07-data:
+  mobility-l08-data:
