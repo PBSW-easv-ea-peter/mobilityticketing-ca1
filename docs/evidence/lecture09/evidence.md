@@ -12,6 +12,12 @@ Order notation: `A:read → B:read → A:write → A:commit → B:write → B:co
 | 2 | 1 / `variants/01-unsafe-increment.sql` (`reserved_seats + 1`) | Read Committed | T-LAST | A:read → B:read → A:write → A:commit → B:write (fails) → B:rollback | Nobody (A committed before B wrote) | B UPDATE: `23514` check violation `trips_check`, failing row `(T-LAST, Scheduled, 1, 2)` | 1 (inc-A) | 1 (`counts_agree = t`) |
 | 3 | 2 / `variants/02-conditional.sql`, A commits | Read Committed | T-LAST | A:book → B:book (waits) → A:commit → B:error → B:rollback | B's UPDATE waits for A's row lock (`Lock/transactionid`, blocked by A) until A commits | B: `P0001` "Trip T-LAST is full, cancelled or missing" | 1 (request-A, id 1) | 1 (`counts_agree = t`) |
 | 4 | 2 / `variants/02-conditional.sql`, A rolls back | Read Committed | T-LAST | A:book → B:book (waits) → A:rollback → B:returns 2 → B:commit | B's UPDATE waits for A's row lock until A rolls back | None | 1 (request-B, id 2) | 1 (`counts_agree = t`) |
+| 5 | 3a / `variants/03-row-lock.sql`, A commits | Read Committed | T-LAST | A:book → B:book (waits) → A:commit → B:error → B:rollback | B's `SELECT ... FOR UPDATE` waits for A's row lock (`Lock/transactionid`) | B: `P0001` full, cancelled or missing | 1 (request-A) | 1 (`counts_agree = t`) |
+| 6 | 3a / `variants/03-row-lock.sql`, A rolls back | Read Committed | T-LAST | A:book → B:book (waits) → A:rollback → B:returns 2 → B:commit | B's `SELECT ... FOR UPDATE` waits until A rolls back | None | 1 (request-B) | 1 (`counts_agree = t`) |
+| 7 | 3a / `variants/03-row-lock.sql`, other trip | Read Committed | T-LAST, T-OTHER | A:book T-LAST → B:book T-OTHER → B:commit → B:book T-LAST (waits) → A:commit → B:error → B:rollback | T-OTHER: nobody. T-LAST: B waits for A | B on T-LAST: `P0001` | T-LAST 1 (request-A), T-OTHER 1 (request-B-other) | T-LAST 1, T-OTHER 1 (all agree) |
+| 8 | 3b / `variants/04-table-lock.sql`, A commits | Read Committed | T-LAST | A:book → B:book (waits) → A:commit → B:error → B:rollback | B waits for the table lock (`Lock/relation`) | B: `P0001` | 1 (request-A) | 1 (`counts_agree = t`) |
+| 9 | 3b / `variants/04-table-lock.sql`, A rolls back | Read Committed | T-LAST | A:book → B:book (waits) → A:rollback → B:returns 2 → B:commit | B waits for the table lock (`Lock/relation`) | None | 1 (request-B) | 1 (`counts_agree = t`) |
+| 10 | 3b / `variants/04-table-lock.sql`, other trip | Read Committed | T-LAST, T-OTHER | A:book T-LAST → B:book T-OTHER (waits) → A:commit → B:returns 2 → B:commit | B waits on T-OTHER although A only booked T-LAST (`Lock/relation`); plain SELECT from C does not wait | None | T-LAST 1, T-OTHER 1 | T-LAST 1, T-OTHER 1 (all agree) |
 
 ## 1. Double booking
 
@@ -120,7 +126,64 @@ Experiments #3 and #4. Waiting confirmed: while A was open, B was `active` with
 
 ### Row lock (`SELECT ... FOR UPDATE`)
 
+Implementation: `sql/variants/03-row-lock.sql`. `SELECT status, capacity, reserved_seats INTO ...
+FOR UPDATE` locks the trip row first; the check is done in PL/pgSQL (`IF NOT FOUND OR v_status <>
+'Scheduled' OR v_reserved = v_capacity THEN RAISE`), and the UPDATE only needs `WHERE id = p_trip_id`.
+Once the row is locked, no other transaction can change it before we commit, so the value read is
+still current at the UPDATE. Unlike experiment #1, read-check-write is safe here, but only as long as
+every booking path uses `FOR UPDATE`; a plain `SELECT` still reads without waiting.
+
+Prediction: (a) B waits at the `SELECT ... FOR UPDATE`; (b) after A commits, B sees
+`reserved_seats = capacity` and fails; (c) B is not blocked on T-OTHER, only the T-LAST row is locked.
+
+Result (experiments #5–#7): all three confirmed.
+
+- #5 / #6: same outcome as the conditional update (#3 / #4). B waited (`Lock/transactionid`, blocked
+  by A) and then failed with `P0001` (A committed) or got the seat (A rolled back).
+- #7: B's T-OTHER booking returned at once while A held T-LAST. B's next call on T-LAST waited until
+  A committed and then failed.
+- From outside, `pg_stat_activity` only shows the `book(...)` call, not the statement inside it that
+  waits. That it is the `SELECT ... FOR UPDATE` follows from the code (first statement touching the
+  row) and from B getting the RAISE message after the wait, i.e. its SELECT returned
+  `reserved_seats = 1`.
+
+Extra check while A held the T-LAST lock (uncommitted booking): a plain
+`SELECT reserved_seats FROM lab09.trips WHERE id = 'T-LAST'` from a third session C returned
+`0` in 37 ms without waiting. `SELECT ... FOR UPDATE NOWAIT` from C failed at once with
+"could not obtain lock on row in relation "trips"".
+
+Answers:
+
+- Which operations wait? Only operations that want to lock or write the same row:
+  `SELECT ... FOR UPDATE` and UPDATE on T-LAST. Other rows (T-OTHER, #7) do not wait, and plain
+  reads do not wait either (MVCC: readers do not block on writers). The reader sees the last
+  committed value (0), not A's uncommitted 1.
+- How does the time between acquiring the lock and committing affect other passengers? Everyone
+  booking the same trip queues behind the lock for that whole time. If the application held the lock
+  during a slow external call (e.g. a 10 s payment), every booking on that trip would wait up to 10 s.
+  Under load, waiting connections pile up and may hit timeouts or exhaust the connection pool.
+  Bookings on other trips are unaffected. Keep the locked section short and make no external calls
+  inside it. Paying before booking risks charging for a seat that is gone, so a common pattern is:
+  reserve the seat in a short transaction, pay outside any transaction, then confirm or release the
+  seat in another short transaction.
+
 ### Table lock (`LOCK TABLE ... IN EXCLUSIVE MODE`)
+
+Implementation: `sql/variants/04-table-lock.sql`. `LOCK TABLE lab09.trips IN EXCLUSIVE MODE` as the
+first statement, held until commit or rollback. The SELECT no longer needs `FOR UPDATE`: no other
+transaction can write or lock rows in the table while we hold it, so the row lock would be redundant.
+
+Prediction: (a) B must wait to book T-OTHER, because the whole table is locked; (b) a plain SELECT
+still goes through, because it only reads.
+
+Result (experiments #8–#10): both confirmed.
+
+- #8 / #9: same outcomes as the row lock (#5 / #6), but B now waits on `Lock/relation` (the table)
+  instead of `Lock/transactionid` (the row holder).
+- #10: B waited on T-OTHER although A only booked T-LAST; B got its seat right after A committed.
+  A plain SELECT from C returned T-LAST `reserved_seats = 0` without waiting: `EXCLUSIVE` conflicts
+  with row locks and writes, but not with `ACCESS SHARE` (plain reads). `ACCESS EXCLUSIVE` would also
+  block reads.
 
 ### Advisory lock (`pg_advisory_xact_lock`)
 

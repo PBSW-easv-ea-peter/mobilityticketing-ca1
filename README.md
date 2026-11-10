@@ -125,6 +125,17 @@ Hvor lab.md skriver `docker compose exec postgres ...`, bruges `postgres-l09` i 
 - [ ] Genindlæs funktionen: `docker compose exec -T postgres-l09 bash /lab/run.sh load`.
 - [ ] Inspicér og tjek: `docker compose exec -T postgres-l09 bash /lab/run.sh inspect` og `... run.sh check`.
 
+### Genskab en variant
+
+Hver version af `lab09.book` ligger i `database/postgres/lecture09/sql/variants/` som en `CREATE OR REPLACE FUNCTION`. En tidligere version kan genskabes uden at ændre `book.sql`:
+
+```powershell
+docker compose exec -T postgres-l09 bash /lab/run.sh reset
+docker compose exec -T postgres-l09 psql -X -U mobility -d mobility_l09 -f /lab/sql/variants/02-conditional.sql
+```
+
+`reset` giver frisk data og indlæser `book.sql`. Den anden linje erstatter funktionen i databasen med den valgte variant. Undtagelse: `01-unsafe-increment.sql` er et write-script til den usikre sekvens i opgave 1 og køres med `\i` i psql.
+
 ---
 
 Vores arbejde for de enkelte uger kan findes i `docs`, og PROGRESSION.md forklarer udviklingen.
