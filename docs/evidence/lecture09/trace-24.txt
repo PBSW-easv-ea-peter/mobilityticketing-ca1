@@ -1,0 +1,41 @@
+Experiment #24: same request sent concurrently from two sessions, A commits
+PostgreSQL 17, READ COMMITTED, fixture freshly reset (T-TWO: Scheduled, capacity 2, reserved_seats 0).
+Function under test: lab09.book in database/postgres/lecture09/sql/book.sql (variants/07-idempotent.sql).
+[A] / [B] = output from session A / B in the order it happened.
+[monitor] = pg_stat_activity, sampled while B's call had not returned.
+
+[A] BEGIN ISOLATION LEVEL READ COMMITTED;
+[A] BEGIN
+[A] SELECT lab09.book('repeat-A', 'passenger-A', 'T-TWO');
+[A]  book
+[A] ------
+[A]     1
+[A] (1 row)
+-- A leaves its transaction open
+[B] BEGIN ISOLATION LEVEL READ COMMITTED;
+[B] BEGIN
+[B] SELECT lab09.book('repeat-A', 'passenger-A', 'T-TWO');
+-- B's call does not return
+[monitor] A: idle in transaction, wait=Client/ClientRead
+[monitor] B: active, wait=Lock/transactionid, blocked_by=A
+[A] COMMIT;
+[A] COMMIT
+-- B's call now returns
+[B]  book
+[B] ------
+[B]     1
+[B] (1 row)
+[B] COMMIT;
+[B] COMMIT
+
+Inspect after both sessions ended:
+     id      |  status   | capacity | reserved_seats | booking_count | counts_agree
+-------------+-----------+----------+----------------+---------------+--------------
+ T-CANCELLED | Cancelled |        1 |              0 |             0 | t
+ T-LAST      | Scheduled |        1 |              0 |             0 | t
+ T-OTHER     | Scheduled |        2 |              0 |             0 | t
+ T-TWO       | Scheduled |        2 |              1 |             1 | t
+
+ id | request_id | passenger_id | trip_id
+----+------------+--------------+---------
+  1 | repeat-A   | passenger-A  | T-TWO

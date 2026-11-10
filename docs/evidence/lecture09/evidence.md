@@ -36,6 +36,8 @@ Order notation: `A:read → B:read → A:write → A:commit → B:write → B:co
 | 26 | 6 / reuse request id, different passenger | Read Committed (autocommit) | T-LAST | book `first` with passenger-B | Nobody | `P0001` Request first is already used for another booking | 1 (first, unchanged) | 1 (unchanged) |
 | 27 | 6 / reuse request id, different trip | Read Committed (autocommit) | T-OTHER | book `first` with T-OTHER | Nobody | `P0001` (same message) | 1 (first, unchanged) | T-LAST 1, T-OTHER 0 (unchanged) |
 | 28 | 6 / supplied checks (`run.sh check`) | Read Committed | all | single-session checks incl. full, cancelled, missing, rollback after returned ID | Nobody | None | restored | restored ("Single-session checks passed") |
+| 29 | 7 / AI-suggested: same request, A rolls back | Read Committed | T-TWO | A:book `repeat-A` → B:book `repeat-A` (waits) → A:rollback → B:returns 2 → B:commit | B waits on A's unique key (`Lock/transactionid`) | None | 1 (repeat-A, id 2) | 1 (`counts_agree = t`) |
+| 30 | 7 / own follow-up: same request, A commits | Repeatable Read | T-TWO | A:book `repeat-A` → B:book `repeat-A` (waits) → A:commit → B:error → B:rollback | B waits on A's unique key (`Lock/transactionid`) | B INSERT ... ON CONFLICT: `40001` could not serialize access due to concurrent update | 1 (repeat-A, id 1) | 1 (`counts_agree = t`) |
 
 ## 1. Double booking
 
@@ -420,10 +422,47 @@ Experiments #23–#28.
 
 ## 7. AI review
 
-- Prompt:
-- Model:
-- Relevant response:
-- Our prediction:
+- Prompt: [`ai-prompt.md`](ai-prompt.md). The lab's example prompt with the schema (two `CREATE TABLE`),
+  the final `book.sql` and the trace of experiment #24 ([`trace-24.txt`](trace-24.txt)) inserted.
+- Model: Claude Opus 5.5 (a separate session, not the one that helped write the function).
+- Relevant response (summary):
+  - Uncovered case: the first holder rolls back instead of committing. Schedule: A books `repeat-A` on
+    T-TWO and stays open, B sends the same request and blocks, A rolls back, B commits.
+  - Prediction: B's `INSERT ... ON CONFLICT` waits on A's transaction; after A's rollback there is no
+    conflict, B inserts and returns 2 (not 1), no SQLSTATE. Final: T-TWO 1 seat, 1 booking (id 2); id 1
+    is permanently missing.
+  - Assumption tested: when the holder aborts, the waiting duplicate becomes a fresh booking taking
+    exactly one seat, and does not fall into the replay branch. Risk named: if the replay branch's
+    SELECT found no row, `v_passenger` would be NULL, `NULL <> ...` is not true, and the function would
+    silently return NULL.
+  - Also noted: the request ID is idempotent, the booking ID is not; the client saw 1 and then gets 2.
+- Our prediction: the suggested case was already run as #25. Own follow-up (#30), testing the NULL risk:
+  the same schedule at Repeatable Read with A committing should make B fail with an error rather than
+  book.
 - Actual output:
+  - #29 (AI schedule): B waited (`Lock/transactionid`, blocked by A), returned 2 after A's rollback and
+    committed. T-TWO: 1 seat, 1 booking (id 2). Exactly as the AI predicted, and identical to #25.
+  - #30 (Repeatable Read, A commits): B failed with `40001: could not serialize access due to concurrent
+    update` at the `INSERT ... ON CONFLICT` (`ExecCheckTupleVisible`). B rolled back. T-TWO: 1 seat,
+    1 booking (id 1). Our prediction confirmed.
 - Accepted / rejected, and why:
+  - Suggested case: accepted as correct, but it was not new. The AI only saw #24, so it could not know
+    #25 already covered it. Its prediction matched the observed rows exactly (#29).
+  - NULL risk: not reproduced. At Read Committed B sees A's committed row; at Repeatable Read PostgreSQL
+    raises `40001` at the insert because the conflicting row is invisible to B's snapshot, so the replay
+    branch is never reached with a missing row. The retry of the whole transaction would then take the
+    replay branch and return 1.
+  - Implementation unchanged. The NULL return is a theoretical risk that we could not provoke. A
+    possible hardening would be `IF NOT FOUND OR v_passenger <> ... OR v_trip <> ...`; we chose not to
+    change the tested function without a failing case.
 - Conclusion:
+  - What the AI identified: a real gap in our single trace (the holder rolling back) and a code-level
+    weakness (NULL from the replay branch if the row is missing). The first was already covered by #25.
+  - What our experiments established: the AI's schedule behaved exactly as predicted (#29), and at
+    Repeatable Read PostgreSQL stops the duplicate with `40001` before the replay branch (#30). In every
+    run the bookings and the counter agreed.
+  - What remains untested: more than two concurrent sessions; trips beyond the four fixture rows; the
+    hardened NULL check; and the client side: a client that saw ID 1 from a rolled-back attempt now
+    holds an ID that does not exist (#25/#29). Whether the client must treat only a committed ID as
+    authoritative is a design decision no test records. Agreement from the model is not a test result;
+    only #29 and #30 are.
