@@ -26,6 +26,10 @@ Order notation: `A:read → B:read → A:write → A:commit → B:write → B:co
 | 16 | 4 / `variants/06-optimistic-write.sql` | Read Committed | T-TWO | A:read 0 → B:read 0 → A:write → A:commit → B:write (0 rows) → B:rollback → B:new tx read 1 → B:write → B:commit | Nobody (A committed before B wrote) | None; B's first check updated 0 rows | 2 (opt-a, opt-b-retry) | 2 (`counts_agree = t`) |
 | 17 | 4 / optimistic, A commits | Read Committed | T-LAST | A:read 0 → B:read 0 → A:write → B:write (waits) → A:commit → B:0 rows → B:rollback → B:retry read 1 → B:0 rows → B:rollback | B's UPDATE waits on A's row lock (`Lock/transactionid`) | None; both B attempts updated 0 rows | 1 (opt-a) | 1 (`counts_agree = t`) |
 | 18 | 4 / optimistic, A rolls back | Read Committed | T-LAST | A:read 0 → B:read 0 → A:write → B:write (waits) → A:rollback → B:check passes → B:commit | B's UPDATE waits on A's row lock (`Lock/transactionid`) | None | 1 (opt-b) | 1 (`counts_agree = t`) |
+| 19 | 5 / unsafe scripts | Repeatable Read | T-LAST | A:read 0 → B:read 0 → A:write → A:commit → B:write (fails) → B:rollback | Nobody (A committed before B wrote) | B UPDATE: `40001` could not serialize access due to concurrent update (then `25P02` on INSERT) | 1 (iso-a) | 1 (`counts_agree = t`) |
+| 20 | 5 / retry of #19 | Repeatable Read | T-LAST | B:new tx → read 1, `can_book=f` → no write → commit | Nobody | None | 1 (iso-a) | 1 (`counts_agree = t`) |
+| 21 | 5 / unsafe scripts | Serializable | T-LAST | A:read 0 → B:read 0 → A:write → A:commit → B:write (fails) → B:rollback | Nobody (A committed before B wrote) | B UPDATE: `40001` could not serialize access due to concurrent update (then `25P02` on INSERT) | 1 (iso-a) | 1 (`counts_agree = t`) |
+| 22 | 5 / retry of #21 (whole transaction) | Serializable | T-LAST | B:new tx → read 1, `can_book=f` → no write → commit | Nobody | None | 1 (iso-a) | 1 (`counts_agree = t`) |
 
 ## 1. Double booking
 
@@ -308,11 +312,54 @@ Experiments #16–#18.
 
 ## 5. Isolation levels
 
+The original unsafe read-then-write sequence from task 1 (`unsafe-read.sql`, `unsafe-write.sql`),
+same order, only the isolation level changed.
+
+Prediction: under Repeatable Read, B fails with `40001` and gets no seat.
+
 ### Repeatable Read
+
+Experiments #19–#20. Prediction confirmed. Both sessions read 0 from their snapshot. A wrote and
+committed. B's UPDATE of the same row failed with `40001: could not serialize access due to concurrent
+update`: the row had been changed and committed after B's snapshot, so PostgreSQL refused to overwrite
+it instead of losing A's update (compare #1). B rolled back and started a new transaction; the new read
+saw `reserved_seats=1, can_book=f`, so no booking was written. Final: 1 booking, 1 seat.
+
+At Repeatable Read the transaction takes one snapshot at its first statement and every read sees it,
+so the same row read twice gives the same answer. The purpose is consistency, not performance.
 
 ### Serializable
 
+Experiments #21–#22. Same result and same `40001` error. The retry of the whole transaction read again,
+found the trip full and wrote nothing.
+
 ### Answers
+
+- Why retrying only the failed statement with the old value is insufficient: the decision was made from
+  the read (`seen_reserved = 0`). Repeating the UPDATE would write the stale `0 + 1` again. The read and
+  the decision must be repeated too, so the whole transaction is retried from `BEGIN`; in #20 the new
+  read showed the trip was full and correctly booked nothing.
+- Why the two tests look alike although the guarantees differ: our test has both transactions write
+  the same single row, which Repeatable Read already detects. The difference shows when two
+  transactions read overlapping data but write different rows: write skew, which the PostgreSQL
+  documentation lists as possible under Repeatable Read. Example: a rule "max one booking per passenger
+  per day". A and B both check that the passenger has none and each insert a new row. No row was written
+  by both, so Repeatable Read detects nothing and the rule is broken; Serializable would abort one of
+  them. Protecting this shared counter does not prove that multi-row business rules are safe.
+
+### Handling 40001
+
+- What is repeated: the whole transaction from `BEGIN`: read, decision and writes. Never only the
+  failed statement.
+- Attempts: a small limit, e.g. 3, with a short random delay between attempts.
+- If attempts keep failing: the passenger sees "The booking could not be completed right now, please
+  try again" and is not charged.
+- Same handling at both levels; Serializable can raise `40001` in more situations (also on read/write
+  dependencies, not only same-row updates), so expect more retries there.
+- External payment inside the retry loop? No. A rollback only undoes database changes; a payment
+  already started cannot be undone by PostgreSQL. Every retry could charge the passenger again, i.e.
+  paying twice for the same seat. Pay outside the loop (reserve, pay, confirm), or send an idempotency
+  key to the payment provider so a repeated request is recognised.
 
 ### Handling 40001
 
