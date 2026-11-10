@@ -18,6 +18,11 @@ Order notation: `A:read → B:read → A:write → A:commit → B:write → B:co
 | 8 | 3b / `variants/04-table-lock.sql`, A commits | Read Committed | T-LAST | A:book → B:book (waits) → A:commit → B:error → B:rollback | B waits for the table lock (`Lock/relation`) | B: `P0001` | 1 (request-A) | 1 (`counts_agree = t`) |
 | 9 | 3b / `variants/04-table-lock.sql`, A rolls back | Read Committed | T-LAST | A:book → B:book (waits) → A:rollback → B:returns 2 → B:commit | B waits for the table lock (`Lock/relation`) | None | 1 (request-B) | 1 (`counts_agree = t`) |
 | 10 | 3b / `variants/04-table-lock.sql`, other trip | Read Committed | T-LAST, T-OTHER | A:book T-LAST → B:book T-OTHER (waits) → A:commit → B:returns 2 → B:commit | B waits on T-OTHER although A only booked T-LAST (`Lock/relation`); plain SELECT from C does not wait | None | T-LAST 1, T-OTHER 1 | T-LAST 1, T-OTHER 1 (all agree) |
+| 11 | 3c / `variants/05-advisory-lock.sql`, A commits | Read Committed | T-LAST | A:book → B:book (waits) → A:commit → B:error → B:rollback | B waits for the advisory lock (`Lock/advisory`, key 9009/1) | B: `P0001` | 1 (request-A) | 1 (`counts_agree = t`) |
+| 12 | 3c / `variants/05-advisory-lock.sql`, A rolls back | Read Committed | T-LAST | A:book → B:book (waits) → A:rollback → B:returns 2 → B:commit | B waits for the advisory lock (`Lock/advisory`) | None | 1 (request-B) | 1 (`counts_agree = t`) |
+| 13 | 3c / A uses `book()` (advisory), B uses unsafe path | Read Committed | T-LAST | A:book → B:read → B:write (waits) → A:commit → B:write `0 + 1` → B:commit | B's read: nobody. B's UPDATE waits on A's row lock (`Lock/transactionid`), not the advisory lock | None | 2 (request-A, unsafe-B) | 1 (`counts_agree = f`) |
+| 14 | 3d / deadlock, opposite order (plain `SELECT ... FOR UPDATE`) | Read Committed | T-LAST, T-OTHER | A:lock LAST → B:lock OTHER → A:lock OTHER (waits) → B:lock LAST → B:error → A:continues → both rollback | A waits for B on T-OTHER; B would wait for A on T-LAST (cycle) | B: `40P01` deadlock detected | 0 (no bookings) | unchanged |
+| 15 | 3d / same order (both T-LAST → T-OTHER) | Read Committed | T-LAST, T-OTHER | A:lock LAST → B:lock LAST (waits) → A:lock OTHER → A:rollback → B:lock LAST → B:lock OTHER → B:rollback | B waits for A on T-LAST only | None | 0 (no bookings) | unchanged |
 
 ## 1. Double booking
 
@@ -185,9 +190,70 @@ Result (experiments #8–#10): both confirmed.
   with row locks and writes, but not with `ACCESS SHARE` (plain reads). `ACCESS EXCLUSIVE` would also
   block reads.
 
+Answer: what concurrency do you lose? Passengers on different trips no longer book in parallel.
+With the row lock, B's T-OTHER booking returned at once (#7); with the table lock it waited for A (#10).
+Every booking in the system is serialized, one at a time regardless of how many trips exist: 50
+passengers booking 50 different trips queue behind each other. One slow transaction (e.g. a payment
+inside the lock) now blocks bookings on every trip, not just its own. The row lock gives the same
+correctness for this rule with far less waiting.
+
 ### Advisory lock (`pg_advisory_xact_lock`)
 
+Implementation: `sql/variants/05-advisory-lock.sql`. A `CASE` maps the trip to its key
+(`T-LAST = 1`, `T-TWO = 2`, `T-CANCELLED = 3`, `T-OTHER = 4`), then
+`PERFORM pg_advisory_xact_lock(9009, v_lock_key)` before the SELECT (no `FOR UPDATE`). The lock is
+released automatically at commit or rollback.
+
+Prediction (unsafe path in B): B can read but not write while A holds the advisory lock; B reads the
+old value. Final count: probably 1 reserved seat.
+
+Result (experiments #11–#13):
+
+- #11 / #12: same outcomes as the row lock, but B waits on `Lock/advisory`. `pg_locks` showed A
+  holding `advisory classid=9009 objid=1 granted=true`.
+- #13: B's unsafe read did not wait and saw `reserved_seats=0`. B's UPDATE did wait, but on A's
+  ordinary row lock from the UPDATE inside `book()` (`Lock/transactionid`), not on the advisory lock.
+  When A committed, B wrote its stale `SET reserved_seats = 0 + 1` and committed: 2 bookings,
+  `reserved_seats = 1`, `counts_agree = f`. The same lost update as experiment #1.
+- Prediction partly confirmed: the read went through with the old value and the count ended at 1, but
+  B was not stopped from writing, only delayed, and a second booking was created.
+
+Answers:
+
+- Can the lock protect code that ignores the convention? No. An advisory lock is an agreement
+  between the code paths that take it. PostgreSQL does not know that key 9009/1 means T-LAST, so the
+  unsafe path read and wrote without asking, which gave the double booking in #13.
+- Advisory-lock waiting vs. row locks taken by updates: the advisory lock (`Lock/advisory`) is only
+  taken explicitly and only serializes callers that request the same key. The row lock
+  (`Lock/transactionid`) is taken automatically by every UPDATE, whatever the code does, and stops two
+  concurrent writes to the same row. It cannot stop a stale value from being written after the lock is
+  released (#13).
+- Why use an advisory lock at all? It can protect something that is not a single row, e.g. a rule
+  across many rows such as "max 3 bookings per passenger per day". The price is that every code path
+  must follow the convention.
+
 ### Deadlock
+
+Plain row locks, no booking function: each session runs `SELECT id FROM lab09.trips WHERE id = ...
+FOR UPDATE` on two trips.
+
+Prediction (same order): B waits for A at T-LAST; the same row cannot be locked twice.
+
+Result (experiments #14–#15):
+
+- #14, opposite order: A locked T-LAST, B locked T-OTHER, A waited for T-OTHER, then B asked for
+  T-LAST. B failed with `40P01: deadlock detected`
+  (`Process 37892 waits for ShareLock on transaction 924; blocked by process 37893. Process 37893 waits
+  for ShareLock on transaction 925; blocked by process 37892.`). PostgreSQL aborted one transaction in
+  the cycle (B); A's waiting statement then returned at once.
+- #15, same order: B waited for A at T-LAST. When A ended, B got T-LAST and T-OTHER without waiting
+  again, because A releases all its locks together at commit or rollback. No deadlock.
+- Prediction confirmed, with one correction: B does not wait a second time at T-OTHER.
+
+Answer: what should the application retry after a deadlock? The whole transaction, from `BEGIN`.
+After `40P01` the transaction is aborted and all its work is gone, so retrying only the failed statement
+is impossible; the earlier reads may also be stale. Use a small retry limit with a short random delay.
+Prevention: acquire locks in a consistent order (e.g. sorted by trip id), which turned #14 into #15.
 
 ## 4. Optimistic check
 

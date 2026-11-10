@@ -1,6 +1,6 @@
 -- Your implementation goes here. Run `bash /lab/run.sh load` after editing.
 -- The function runs in the caller's transaction; do not COMMIT inside it.
--- Task 3b: table lock. Lock the whole trips table first, then check, update and insert.
+-- Task 3c: transaction advisory lock. Namespace 9009, one key per fixture trip.
 CREATE OR REPLACE FUNCTION lab09.book(
     p_request_id text,
     p_passenger_id text,
@@ -14,13 +14,20 @@ DECLARE
     v_capacity     integer;
     v_reserved     integer;
     v_booking_id   bigint;
+    v_lock_key     integer;
 BEGIN
-    LOCK TABLE lab09.trips IN EXCLUSIVE MODE;    -- (1) held until COMMIT/ROLLBACK
+    v_lock_key := CASE p_trip_id
+                      WHEN 'T-LAST'      THEN 1
+                      WHEN 'T-TWO'       THEN 2          -- (1)
+                      WHEN 'T-CANCELLED' THEN 3
+                      WHEN 'T-OTHER'     THEN 4          -- (2)
+                  END;
+    PERFORM pg_advisory_xact_lock(9009, v_lock_key);     -- (3) released at COMMIT/ROLLBACK
 
     SELECT status, capacity, reserved_seats
     INTO v_status, v_capacity, v_reserved
     FROM lab09.trips
-    WHERE id = p_trip_id;                         -- (2) no FOR UPDATE: the table lock already covers it
+    WHERE id = p_trip_id;                                -- no FOR UPDATE: the advisory lock serializes bookings
 
     IF NOT FOUND
        OR v_status <> 'Scheduled'
