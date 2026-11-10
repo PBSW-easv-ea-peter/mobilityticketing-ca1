@@ -23,6 +23,9 @@ Order notation: `A:read → B:read → A:write → A:commit → B:write → B:co
 | 13 | 3c / A uses `book()` (advisory), B uses unsafe path | Read Committed | T-LAST | A:book → B:read → B:write (waits) → A:commit → B:write `0 + 1` → B:commit | B's read: nobody. B's UPDATE waits on A's row lock (`Lock/transactionid`), not the advisory lock | None | 2 (request-A, unsafe-B) | 1 (`counts_agree = f`) |
 | 14 | 3d / deadlock, opposite order (plain `SELECT ... FOR UPDATE`) | Read Committed | T-LAST, T-OTHER | A:lock LAST → B:lock OTHER → A:lock OTHER (waits) → B:lock LAST → B:error → A:continues → both rollback | A waits for B on T-OTHER; B would wait for A on T-LAST (cycle) | B: `40P01` deadlock detected | 0 (no bookings) | unchanged |
 | 15 | 3d / same order (both T-LAST → T-OTHER) | Read Committed | T-LAST, T-OTHER | A:lock LAST → B:lock LAST (waits) → A:lock OTHER → A:rollback → B:lock LAST → B:lock OTHER → B:rollback | B waits for A on T-LAST only | None | 0 (no bookings) | unchanged |
+| 16 | 4 / `variants/06-optimistic-write.sql` | Read Committed | T-TWO | A:read 0 → B:read 0 → A:write → A:commit → B:write (0 rows) → B:rollback → B:new tx read 1 → B:write → B:commit | Nobody (A committed before B wrote) | None; B's first check updated 0 rows | 2 (opt-a, opt-b-retry) | 2 (`counts_agree = t`) |
+| 17 | 4 / optimistic, A commits | Read Committed | T-LAST | A:read 0 → B:read 0 → A:write → B:write (waits) → A:commit → B:0 rows → B:rollback → B:retry read 1 → B:0 rows → B:rollback | B's UPDATE waits on A's row lock (`Lock/transactionid`) | None; both B attempts updated 0 rows | 1 (opt-a) | 1 (`counts_agree = t`) |
+| 18 | 4 / optimistic, A rolls back | Read Committed | T-LAST | A:read 0 → B:read 0 → A:write → B:write (waits) → A:rollback → B:check passes → B:commit | B's UPDATE waits on A's row lock (`Lock/transactionid`) | None | 1 (opt-b) | 1 (`counts_agree = t`) |
 
 ## 1. Double booking
 
@@ -257,11 +260,51 @@ Prevention: acquire locks in a consistent order (e.g. sorted by trip id), which 
 
 ## 4. Optimistic check
 
+Implementation: `sql/variants/06-optimistic-write.sql`, a psql write script so A and B can be stepped
+separately. Each session reads `SELECT reserved_seats AS observed ... \gset` inside its transaction.
+The script inserts the booking, then runs the UPDATE with `status = 'Scheduled' AND reserved_seats <
+capacity AND reserved_seats = :observed`. `:ROW_COUNT = 0` means the check failed; the session rolls
+back, which also undoes the INSERT.
+
 ### Prediction
+
+- T-TWO: B's first attempt fails, but there can still be a seat at the retry, because an optimistic
+  check is not a capacity check.
+- T-LAST: the database still blocks two writers on the same row, not necessarily a "real" lock.
 
 ### Result
 
+Experiments #16–#18.
+
+- #16 (T-TWO): A and B both observed 0. A committed (1). B's UPDATE matched 0 rows, because the row
+  was 1, not 0, although a seat was still free. B rolled back, read again (observed 1) and succeeded
+  (2/2). Booking id 2 is missing: B's rolled-back INSERT used it.
+- #17 (T-LAST, A commits): B's UPDATE waited on A's row lock (`Lock/transactionid`). After A
+  committed, B's check failed; the retry observed 1 and failed again, now because the trip was full.
+- #18 (T-LAST, A rolls back): B waited, then its check passed (the row was still 0) and B got the seat.
+- Prediction 1 confirmed in outcome, corrected in reasoning: in #16 A did not fail, it committed. B's
+  check failed because the value changed, not because the trip was full. A failed optimistic check
+  means "someone changed the row", not "no seat".
+- Prediction 2 confirmed: it is a real row lock. "Optimistic" means no lock is taken at read time; the
+  UPDATE still locks the row and waits for an open writer.
+
 ### Answers
+
+- Why a failed optimistic check does not mean the trip is full: it only says the row no longer has
+  the value we read. In #16 one seat was still free, and the retry with a new read got it.
+- Waiting and retries compared with the conditional update (task 2): both wait the same way on an open
+  writer's row lock (#3/#4 vs. #17/#18). The conditional update re-evaluates `reserved_seats < capacity`
+  on the current row after the wait, so it succeeds whenever a seat is free and needs no retry. The
+  optimistic check also requires `reserved_seats = :observed`, so it fails on any concurrent change
+  even with seats left, and the application must roll back, read again and retry (#16). On a busy trip
+  that means more failed attempts and retries for the same result.
+- Count changed and returned to its original value (ABA): B's check compares only the number. If
+  someone booked (0→1) and cancelled (1→0) after B read, B sees 0 = 0 and passes, unaware that
+  anything happened. For a pure seat counter this is harmless (0 is still 0), but it is dangerous
+  when the decision depends on more than the number, e.g. status or capacity changed and changed back.
+- A version column: incremented on every relevant change, it only grows, so the check
+  `version = :observed_version` fails after any change in between, including 0→1→0. It detects
+  "something changed" reliably; the capacity condition still decides whether a seat is free.
 
 ## 5. Isolation levels
 
