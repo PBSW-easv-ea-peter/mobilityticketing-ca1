@@ -30,6 +30,12 @@ Order notation: `A:read → B:read → A:write → A:commit → B:write → B:co
 | 20 | 5 / retry of #19 | Repeatable Read | T-LAST | B:new tx → read 1, `can_book=f` → no write → commit | Nobody | None | 1 (iso-a) | 1 (`counts_agree = t`) |
 | 21 | 5 / unsafe scripts | Serializable | T-LAST | A:read 0 → B:read 0 → A:write → A:commit → B:write (fails) → B:rollback | Nobody (A committed before B wrote) | B UPDATE: `40001` could not serialize access due to concurrent update (then `25P02` on INSERT) | 1 (iso-a) | 1 (`counts_agree = t`) |
 | 22 | 5 / retry of #21 (whole transaction) | Serializable | T-LAST | B:new tx → read 1, `can_book=f` → no write → commit | Nobody | None | 1 (iso-a) | 1 (`counts_agree = t`) |
+| 23 | 6 / `variants/07-idempotent.sql`, replay on full trip | Read Committed (autocommit) | T-LAST | book `first` → 1 → same request again → 1 | Nobody | None | 1 (first) | 1 (`counts_agree = t`) |
+| 24 | 6 / same request concurrently, A commits | Read Committed | T-TWO | A:book `repeat-A` → B:book `repeat-A` (waits) → A:commit → B:returns 1 → B:commit | B's INSERT waits on A's uncommitted unique key (`Lock/transactionid`) | None | 1 (repeat-A, id 1) | 1 (`counts_agree = t`) |
+| 25 | 6 / same request concurrently, A rolls back | Read Committed | T-TWO | A:book `repeat-A` → B:book `repeat-A` (waits) → A:rollback → B:returns 2 → B:commit | B's INSERT waits on A's uncommitted unique key | None | 1 (repeat-A, id 2) | 1 (`counts_agree = t`) |
+| 26 | 6 / reuse request id, different passenger | Read Committed (autocommit) | T-LAST | book `first` with passenger-B | Nobody | `P0001` Request first is already used for another booking | 1 (first, unchanged) | 1 (unchanged) |
+| 27 | 6 / reuse request id, different trip | Read Committed (autocommit) | T-OTHER | book `first` with T-OTHER | Nobody | `P0001` (same message) | 1 (first, unchanged) | T-LAST 1, T-OTHER 0 (unchanged) |
+| 28 | 6 / supplied checks (`run.sh check`) | Read Committed | all | single-session checks incl. full, cancelled, missing, rollback after returned ID | Nobody | None | restored | restored ("Single-session checks passed") |
 
 ## 1. Double booking
 
@@ -365,11 +371,52 @@ found the trip full and wrote nothing.
 
 ## 6. Repeated requests
 
+Implementation (final `sql/book.sql`, saved as `sql/variants/07-idempotent.sql`), built on the
+conditional update from task 2:
+
+1. `INSERT ... ON CONFLICT (request_id) DO NOTHING RETURNING id INTO v_booking_id`.
+2. `IF FOUND` (new request): conditional UPDATE; `IF NOT FOUND THEN RAISE`, which also rolls back the
+   INSERT. Return the new ID.
+3. Otherwise (known request): look up the existing booking; if passenger or trip differ, `RAISE`;
+   else return the original ID without touching the counter.
+
 ### Prediction
+
+- Concurrent same request: first expected B to use another request ID and continue; corrected to
+  "B gets a conflict and is held back".
 
 ### Result
 
+Experiments #23–#28.
+
+- #23: the replay on the now full T-LAST returned the original ID 1 and took no seat.
+- #24 / #25: B's `INSERT ... ON CONFLICT` waited on A's uncommitted unique-index entry for
+  `repeat-A` (`Lock/transactionid`): the database cannot know whether the key will exist until A ends.
+  A committed: conflict, `DO NOTHING`, B returned A's ID 1. A rolled back: no conflict, B inserted and
+  booked itself (ID 2). Both: one booking, one reserved seat.
+- #26 / #27: reusing `first` with another passenger or another trip was rejected; the original booking
+  and both counters were unchanged.
+- #28: `run.sh check` passed for the first time ("Single-session checks passed").
+- Prediction partly confirmed: B was held back (waited), but did not fail. After A committed, the
+  conflict was handled by returning the original booking.
+
 ### Answers
+
+- Why a unique request ID does not stop two different requests from booking the last seat: the
+  constraint only compares `request_id`. `request-A` and `request-B` are different values, so there is
+  no conflict and both inserts go through. What stops both from getting the last seat is the conditional
+  UPDATE (`reserved_seats < capacity`). The two mechanisms solve different problems: `UNIQUE` stops the
+  same request from counting twice; the capacity condition stops different requests from exceeding the
+  capacity together. `passenger_id` is not unique either: the same passenger can book twice with two
+  request IDs. A rule like "one booking per passenger" would need its own protection (see write skew in
+  task 5).
+- Why checking for an existing ID before inserting is insufficient without a constraint: it is the
+  read-check-write pattern from task 1. Two concurrent calls with the same ID can both run
+  `SELECT ... WHERE request_id = ...` before either has inserted, both see nothing and both insert: two
+  bookings and two seats for one request. Only the unique constraint checks and writes in one atomic
+  step; that is why B in #24 waited on A's key instead of inserting a duplicate.
+- A returned ID is only confirmed after commit: in #25 A's call returned ID 1, but A rolled back, so
+  that booking never existed and B's request got ID 2.
 
 ## 7. AI review
 
