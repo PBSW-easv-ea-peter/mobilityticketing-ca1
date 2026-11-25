@@ -31,11 +31,43 @@ public sealed class ReportWorkflow(
     public Task<string> RecoverAsync(string reportId, string? supersedes) =>
         throw new NotImplementedException("Complete RecoverAsync.");
 
-    public Task<Verification> VerifyAsync(string reportId) =>
-        throw new NotImplementedException("Complete VerifyAsync.");
+    public async Task<Verification> VerifyAsync(string reportId)
+    {
+        ReportInput? input;
+        try
+        {
+            input = await _catalogue.FindAsync(reportId);
+        }
+        catch (CatalogueException)
+        {
+            return Verification.CatalogueReadFailed;
+        }
 
-    private Task<Verification> CheckAsync(ReportInput input) =>
-        throw new NotImplementedException("Complete CheckAsync.");
+        if (input is null)
+            return Verification.UnknownReport;
+
+        return await CheckAsync(input);
+    }
+
+    private async Task<Verification> CheckAsync(ReportInput input)
+    {
+        byte[] bytes;
+        try
+        {
+            bytes = await _storage.ReadVersionAsync(
+                new ExportLocation(input.Bucket, input.Key), input.VersionId);
+        }
+        catch (ObjectStoreException)
+        {
+            return Verification.ReadFailed;
+        }
+
+        var (sha256, rowCount) = Measure(bytes);
+
+        return sha256 == input.Sha256 && rowCount == input.RowCount
+            ? Verification.Matches
+            : Verification.Mismatch;
+    }
 
     private static (string Sha256, int RowCount) Measure(byte[] bytes) =>
         (Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant(),   // (f)
