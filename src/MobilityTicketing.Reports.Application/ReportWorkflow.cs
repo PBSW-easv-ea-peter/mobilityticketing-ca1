@@ -1,3 +1,4 @@
+using System.Data.SqlTypes;
 using System.Security.Cryptography;
 
 namespace MobilityTicketing.Reports.Application;
@@ -14,22 +15,34 @@ public sealed class ReportWorkflow(
     {
         var (sha256, rowCount) = Measure(bytes);
 
-        _receipts.Reserve(reportId);                                   // (a) reservér FØR PUT
+        _receipts.Reserve(reportId);
 
-        var versionId = await _storage.UploadAsync(_destination, bytes);   // (b) PUT til S3
-        if (string.IsNullOrWhiteSpace(versionId) || versionId is "None" or "null")   // (c)(d)
+        var versionId = await _storage.UploadAsync(_destination, bytes);
+        if (string.IsNullOrWhiteSpace(versionId) || versionId is "None" or "null")
             throw new InvalidOperationException("MissingVersionId");
 
         await _receipts.WriteAsync(new ReportInput(
-            reportId, _destination.Bucket, _destination.Key, versionId, sha256, rowCount));  // (e)
+            reportId, _destination.Bucket, _destination.Key, versionId, sha256, rowCount));
         return versionId;
     }
 
-    public Task<string> PublishAsync(string reportId, byte[] bytes, string? supersedes) =>
-        throw new NotImplementedException("Complete PublishAsync.");
+    public async Task<string> PublishAsync(string reportId, byte[] bytes, string? supersedes)
+    {
+        await StageAsync(reportId, bytes);
+        return await RecoverAsync(reportId, supersedes);
+    }
 
-    public Task<string> RecoverAsync(string reportId, string? supersedes) =>
-        throw new NotImplementedException("Complete RecoverAsync.");
+    public async Task<string> RecoverAsync(string reportId, string? supersedes)
+    {
+        var input = await _receipts.ReadAsync(reportId);
+
+        var result = await CheckAsync(input);
+        if (result != Verification.Matches)
+            throw new InvalidOperationException($"{result}");
+
+        await _catalogue.SaveAsync(input, supersedes);
+        return $"Saved {reportId}";
+    }
 
     public async Task<Verification> VerifyAsync(string reportId)
     {
@@ -70,6 +83,6 @@ public sealed class ReportWorkflow(
     }
 
     private static (string Sha256, int RowCount) Measure(byte[] bytes) =>
-        (Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant(),   // (f)
+        (Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant(),
         bytes.Count(b => b == (byte)'\n'));
 }
