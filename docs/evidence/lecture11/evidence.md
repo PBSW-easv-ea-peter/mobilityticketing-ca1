@@ -28,8 +28,8 @@ Upload til S3 og commit i PostgreSQL er hver for sig atomiske, men intet koordin
 
 | Scenario | Prediction | Command, result and exit status | What changed in the catalogue and bucket? |
 | --- | --- | --- | --- |
-| Publish the original | | | |
-| Interrupt after staging a correction | | | |
+| Publish the original | `Saved R-001`, én version, `supersedes` tom | `report publish R-001 fixtures/lecture11/validations-v1.jsonl` → `Saved R-001`, exit 0 | Bucket: 0 → 1 version (`742596b6…`, 306 B, IsLatest). Katalog: R-001, 3 rækker, supersedes NULL, samme version_id som i S3. |
+| Interrupt after staging a correction | Stage udskriver versionId, én katalog-række, to versioner, verify `Matches` | `report stage R-002 fixtures/lecture11/validations-v2.jsonl` → `4a80ae2e-61c0-4311-ac65-feb448d87a5f`, exit 0. `report verify R-002` → `UnknownReport`, exit 3 | Bucket: 2 versioner på samme key, v2 (`4a80ae2e…`, 408 B) er IsLatest. Katalog uændret: kun R-001. `receipts/R-002.json` findes. |
 | Recover with a mismatched receipt | | | |
 | Recover with a nonexistent predecessor | | | |
 | Recover and repeat recovery | | | |
@@ -37,6 +37,11 @@ Upload til S3 og commit i PostgreSQL er hver for sig atomiske, men intet koordin
 | Verify with object storage stopped | | | |
 
 ## Version IDs and row counts
+
+R-001 → `742596b6-bd1f-4eec-89d6-da6e9ade772b`, 3 rækker, sha256 `e94213959361fb09767d264c4afe218410c7e268f7ba865e7fcfcb4a75e19878`.
+R-002 (staged) → `4a80ae2e-61c0-4311-ac65-feb448d87a5f`.
+
+Kun R-001 står i kataloget, fordi R-002 kun er staged og ikke gemt i kataloget endnu. En rapport er først publiceret, når dens katalog-række committer. R-002 findes som version i S3 og i en lokal receipt, men `VerifyAsync` slår kun op i kataloget og svarer derfor `UnknownReport`.
 
 ## An additional check
 
