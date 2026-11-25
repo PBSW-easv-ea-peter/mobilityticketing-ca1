@@ -30,10 +30,10 @@ Upload til S3 og commit i PostgreSQL er hver for sig atomiske, men intet koordin
 | --- | --- | --- | --- |
 | Publish the original | `Saved R-001`, én version, `supersedes` tom | `report publish R-001 fixtures/lecture11/validations-v1.jsonl` → `Saved R-001`, exit 0 | Bucket: 0 → 1 version (`742596b6…`, 306 B, IsLatest). Katalog: R-001, 3 rækker, supersedes NULL, samme version_id som i S3. |
 | Interrupt after staging a correction | Stage udskriver versionId, én katalog-række, to versioner, verify `Matches` | `report stage R-002 fixtures/lecture11/validations-v2.jsonl` → `4a80ae2e-61c0-4311-ac65-feb448d87a5f`, exit 0. `report verify R-002` → `UnknownReport`, exit 3 | Bucket: 2 versioner på samme key, v2 (`4a80ae2e…`, 408 B) er IsLatest. Katalog uændret: kun R-001. `receipts/R-002.json` findes. |
-| Recover with a mismatched receipt | | | |
-| Recover with a nonexistent predecessor | | | |
-| Recover and repeat recovery | | | |
-| Verify the original after the correction | | | |
+| Recover with a mismatched receipt | `Mismatch`, exit 1, R-002 ikke i katalog, ingen ny version | Receipt Sha256 sat til 64 nuller. `report recover R-002 R-001` → `Mismatch`, exit 1. Backup gendannet bagefter. | Intet. Katalog: kun R-001. Bucket: stadig 2 versioner (v2 IsLatest), fordi recover aldrig laver PUT. `CheckAsync` stoppede før `SaveAsync`. |
+| Recover with a nonexistent predecessor | FK-fejl, exit 1, receipt findes stadig | `report recover R-002 R-999` → `23503: … violates foreign key constraint "reports_supersedes_fkey"`, exit 1 | Intet. Katalog: kun R-001. Bucket: 2 versioner. `receipts/R-002.json` findes stadig, så versionen kan genoprettes. |
+| Recover and repeat recovery | (ingen forudsigelse givet) | `report recover R-002 R-001` ×2 → `Saved R-002`, exit 0 begge gange | Katalog: R-002 tilføjet (4 rækker, supersedes R-001, version `4a80ae2e…`). Bucket: stadig 2 versioner, ingen PUT. Anden recover lykkes, fordi `ON CONFLICT DO NOTHING` indsætter 0 rækker, og en identisk række allerede findes, så transaktionen bare committer. Er rækken ikke identisk, kastes `ReportConflict`. |
+| Verify the original after the correction | (ingen forudsigelse givet) | `report verify R-001` → `Matches`, exit 0. `report verify R-002` → `Matches`, exit 0 | Intet ændret. R-001 giver stadig `Matches`, fordi kataloget peger på version `742596b6…`, og CheckAsync læser netop den version, ikke den nyeste. Versioning bevarer v1, selvom v2 er skrevet til samme key. |
 | Verify with object storage stopped | | | |
 
 ## Version IDs and row counts
