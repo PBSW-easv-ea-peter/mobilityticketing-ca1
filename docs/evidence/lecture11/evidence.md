@@ -47,3 +47,47 @@ Kun R-001 står i kataloget, fordi R-002 kun er staged og ikke gemt i kataloget 
 ## An additional check
 
 ## Storage decision
+
+## Explain your design
+
+### 1. Ownership
+
+| Data | Ejer | Hvorfor |
+| --- | --- | --- |
+| Validation-rækker | Kildesystemet | Rapporten er en afledt eksport. Appen læser rækkerne, men ejer dem ikke (i laben: `fixtures/lecture11/`). |
+| Eksportens bytes | S3 (versioned bucket) | Store, uforanderlige blobs. Versioning bevarer v1, når v2 skrives til samme key. |
+| Rapport-metadata | PostgreSQL `reports` | Små felter, der skal slås op, beskyttes af constraints (FK på `supersedes`, CHECK på sha256) og committes atomisk. |
+| Pending upload | Lokal receipt (`receipts/<id>.json`) | Kataloget har én betydning: findes rækken, er rapporten publiceret. Pending-rækker i kataloget ville tvinge alle læsere til at filtrere på status. |
+
+Rækkefølgen er S3 først, PostgreSQL bagefter, så en katalog-række aldrig peger på bytes, der ikke findes.
+
+**Opslag af R-001, efter at R-002 er blevet nyeste version:**
+1. `FindAsync("R-001")` i PostgreSQL → `version_id 742596b6…`, sha256, 3 rækker.
+2. `ReadVersionAsync(key, "742596b6…")` i S3 → v1's 306 bytes med 3 rækker.
+
+En `GET` på key'en uden version-ID returnerer den nyeste version (v2, 4 rækker). Rapporten identificeres derfor via katalogets version-ID, ikke via S3-key'en.
+
+### 2. Safe retries
+
+| Fejl | Hvad findes allerede? | Hvad ser kalderen? | Hvad kan sikkert prøves igen? |
+| --- | --- | --- | --- |
+| PUT fejler | Tom receipt (reservation). I S3 måske intet, men ved timeout kan bytes være gemt som en forældreløs version. | Fejl fra `publish`. | `publish` igen, efter at den tomme receipt er fjernet. `Reserve` bruger `FileMode.CreateNew`, så to samtidige publish af samme rapport ikke kan overskrive hinanden. |
+| Katalog-write fejler, receipt findes | Version i S3 og komplet receipt (version-ID, sha256, rækketal). Intet i kataloget, fordi transaktionen rullede tilbage. | Fejl fra `recover`/`publish` (fx `23503`, exit 1). | `recover`. Den laver ingen ny PUT, men verificerer receiptens version og gemmer. |
+| Crash før receipt skrives | Tom receipt. Måske en version i S3, som intet binder til rapporten. Intet i kataloget. | Ingen svar (processen døde). | `publish` igen efter fjernelse af den tomme receipt. Det giver en ny version. Den gamle er forældreløs: S3 kan måle dens bytes, men kun receipten kender det forventede sha256, så den kan ikke verificeres. |
+
+**Hvorfor en identisk recovery kan lykkes to gange:** `SaveAsync` bruger `ON CONFLICT DO NOTHING`. Anden gang indsættes 0 rækker, men den eksisterende række er identisk, så transaktionen committer og svarer `Saved R-002`. Recover er derfor idempotent.
+
+**Konflikt:** `report recover R-002` (uden predecessor) → `ReportConflict`, exit 1. R-002's række er uændret: 4 rækker, supersedes `R-001`, version `4a80ae2e…`, og R-001 er også uændret. `ON CONFLICT DO NOTHING` indsatte 0 rækker, og da den eksisterende række har en anden `supersedes` end forsøget (NULL), afviser appen i stedet for at overskrive. En retry må kun lykkes, hvis den er identisk med det, der allerede er gemt.
+
+### 3. Access and retention
+
+**Adgang:** Rettighedstjekket ligger før eller i katalog-opslaget (`FindAsync`), så version-ID'et aldrig udleveres til en bruger uden adgang. Version-ID'et er nøglen til bytes, så selv metadata må ikke lække. Manglende adgang og ukendt rapport giver samme svar, så man ikke kan gætte, hvilke rapporter der findes.
+
+**Storage-identitet:** Appen skal kun bruge `PutObject` (`StageAsync`) og `GetObject` med versionId (`CheckAsync`). Den skal ikke kunne slette. Sletning hører til en separat cleanup-identitet, så en kompromitteret app ikke kan fjerne publicerede versioner.
+
+**Cleanup:** Jobbet lister versioner i S3 og slår hver op i kataloget og i receipts:
+- I kataloget → publiceret, behold.
+- I en komplet receipt → pending, behold (`recover` kan stadig køre).
+- Ingen af dem og ældre end en grace-periode → forældreløs, må slettes med `DeleteObject` + versionId.
+
+Grace-perioden beskytter en upload, hvor PUT lige er lykkedes, men receipten endnu ikke er skrevet. Fejler katalog-opslaget (`CatalogueReadFailed`), sletter jobbet ingenting. Et fejlsvar er ikke det samme som "ikke refereret" (jf. eksperiment 5).
