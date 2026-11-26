@@ -46,7 +46,11 @@ Kun R-001 står i kataloget, fordi R-002 kun er staged og ikke gemt i kataloget 
 
 ## An additional check
 
+Et overvågningsjob tjekker `receipts/` for tomme receipts, der er ældre end grace-perioden. En tom receipt betyder, at `Reserve` kørte, men `WriteAsync` aldrig blev færdig, altså et crash mellem reservation og receipt. Den bør udløse en alarm til drift, fordi den blokerer ny publish af netop den rapport (`FileMode.CreateNew`), og fordi der kan ligge en forældreløs version i S3. Drift undersøger sagen, fjerner den tomme receipt og publicerer igen. Den forældreløse version ryddes af cleanup-jobbet (§7.3).
+
 ## Storage decision
+
+Eksportens bytes ligger i en versioned S3-bucket, fordi de er store, uforanderlige og skal kunne genåbnes præcist, selv efter en rettelse til samme key. Metadata og "publiceret"-tilstanden ligger i PostgreSQL, fordi de skal slås op, beskyttes af constraints og committes atomisk. Pending uploads ligger i en receipt uden for kataloget, så en katalog-række altid betyder publiceret. Bindingen mellem de to stores er katalogets version-ID og sha256. Se §7.1.
 
 ## Explain your design
 
