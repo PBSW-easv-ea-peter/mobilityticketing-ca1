@@ -10,7 +10,7 @@ Compulsory Assignment 2 i Databases for Developers samler fem ugelabs: NoSQL (L5
 
 ## Setup
 
-Krav: Docker Desktop (Compose v2) og .NET 10 SDK (kun til Redis-labbet i L6, som kører på værten). Alle kommandoer køres fra repo-roden. De virker i både PowerShell og bash.
+Krav: Docker Desktop (Compose v2) og .NET 10 SDK (kun til Redis-labbet i L6, som kører på værten). Alle kommandoer køres fra repo-roden i PowerShell eller bash. I Git Bash på Windows skal man først køre `export MSYS_NO_PATHCONV=1`, ellers bliver `/scripts/...` lavet om til en Windows-sti.
 
 Hver lab har sin egen database eller container, så de kan køres i vilkårlig rækkefølge og nulstilles hver for sig.
 
@@ -36,7 +36,7 @@ docker compose exec -T mongo mongosh --quiet --file /scripts/lecture05/setup.js
 docker compose exec -T mongo mongosh --quiet --file /scripts/lecture05/reset.js
 ```
 
-Kør søgning, validering, ændringer og vækst:
+Kør søgning, validering, ændringer og vækst. Kør `reset.js` før hvert script, fordi `updates.js` og `alternative.js` ændrer data:
 
 ```
 docker compose exec -T mongo mongosh --quiet --file /scripts/lecture05/search.js
@@ -82,18 +82,18 @@ Redis nede: `docker compose stop redis`, kør igen, og `docker compose start red
 Start, byg og nulstil:
 
 ```
-docker compose up -d --wait postgres-l07
-docker compose build app tests
-docker compose run --rm app reset
+docker compose --profile l07 up -d --wait postgres-l07
+docker compose --profile l07 build app tests
+docker compose --profile l07 run --rm app reset
 ```
 
 Mål og test:
 
 ```
-docker compose run --rm app baseline
-docker compose run --rm app overview
-docker compose run --rm app scale
-docker compose run --rm tests
+docker compose --profile l07 run --rm app baseline
+docker compose --profile l07 run --rm app overview
+docker compose --profile l07 run --rm app scale
+docker compose --profile l07 run --rm tests
 ```
 
 - Kode: [`src/MobilityTicketing.Lecture07/`](../src/MobilityTicketing.Lecture07/) (`StudentApplication.cs`, `Queries/LiveRouteOverviewQuery.cs`, `Queries/PublishedPlanQuery.cs`), tests i [`tests/MobilityTicketing.Lecture07.Tests/StudentTests.cs`](../tests/MobilityTicketing.Lecture07.Tests/StudentTests.cs)
@@ -113,12 +113,12 @@ docker compose exec -T postgres-l08 bash /lab/run.sh reset
 docker compose exec -T postgres-l08 bash /lab/run.sh check
 ```
 
-Mål baseline og vores version for begge ruter, og vis partitioning:
+Opret vores index, mål baseline og vores version, og vis partitioning. `reset` fjerner indexet, så `indexes` skal køres før `measure`:
 
 ```
-docker compose exec -T postgres-l08 bash /lab/run.sh measure baseline R-7
-docker compose exec -T postgres-l08 bash /lab/run.sh measure candidate R-0
 docker compose exec -T postgres-l08 bash /lab/run.sh indexes
+docker compose exec -T postgres-l08 bash /lab/run.sh measure baseline R-0
+docker compose exec -T postgres-l08 bash /lab/run.sh measure candidate R-0
 docker compose exec -T postgres-l08 bash /lab/run.sh partitions
 ```
 
@@ -179,10 +179,12 @@ Andre åbne spørgsmål: L9 er kun testet med to samtidige sessioner.
 
 Udfyldes efter en kørsel fra et frisk clone af det afleverede commit (#9).
 
+Forkørsel 27/11 (før merge, med kommandoerne i denne guide): L5 `search.js` 10/10 PASS og `alternative.js` 10/10 PASS før aflysning (de 3 FAIL efter aflysning er forventede). L6 test A–D PASS, og med Redis stoppet svarer søgningen fra MongoDB (`cache unavailable`). L7 51/51 tests grønne på `lecture/week43_peter`. L8 `check` 4/4 PASS, og `candidate` på R-0 giver Index Scan med 24 buffers. L9 `check` bestået på PR-grenen.
+
 | Lab | Kommando | Resultat |
 | --- | --- | --- |
 | L5 | `search.js` | |
 | L6 | `CacheLab` | |
-| L7 | `docker compose run --rm tests` | |
+| L7 | `docker compose --profile l07 run --rm tests` | |
 | L8 | `run.sh check` | |
 | L9 | `run.sh check` | |
