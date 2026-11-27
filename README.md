@@ -1,4 +1,12 @@
-# MobilityTicketing — Compulsory Assignment 1
+# MobilityTicketing — Databases for Developers
+
+Repoet samler vores arbejde fra ugelabsene. Compulsory Assignment 1 dækker uge 1–4. **Compulsory Assignment 2** dækker NoSQL (L5), Redis (L6), route overview (L7), query optimization (L8) og transactions (L9).
+
+**Til review af CA2: start i [`docs/ca2-review-guide.md`](docs/ca2-review-guide.md).** Den har setup og reset for hver lab, links til kode og evidens, to beslutninger og en begrænsning.
+
+Krav: Docker Desktop (Compose v2). L6 kræver også .NET 10 SDK. Alt nulstilles med `docker compose down -v`.
+
+---
 
 ## Uge 1 – Normalisering
 
@@ -7,9 +15,9 @@ Vi har valgt at fjerne `ticket_code` fra tabellen `Validations`, da `ticket_code
 
 Ved at fjerne `ticket_code` undgår vi at gemme den samme information flere steder og reducerer dermed risikoen for inkonsistente data.
 
-### TODO
-- [ ] Compose  `./docker-compose.yaml`.
-- [ ] Connect til Postgres databasen `mobility` på localhost:5432
+### Sådan kører du det
+- Compose  `./docker-compose.yaml`.
+- Connect til Postgres databasen `mobility` på localhost:5432
 
 `mobility` burde nu være sat op med vores schema og seed-data fra `./databse/postgres/init/`.
 
@@ -27,9 +35,9 @@ Eksempler på validering:
 
 Derudover er der oprettet tests, som forsøger at indsætte ugyldige data. Disse tests skal fejle, hvilket demonstrerer, at vores constraints fungerer som forventet.
 
-### TODO
-- [ ] Kør `./database/postgres/migrations/001_ticketing_integrity.sql`.
-- [ ] Kør `./database/postgres/experiments/01_constraints_should_fail.sql` og verificér, at testene fejler som forventet.
+### Sådan kører du det
+- Kør `./database/postgres/migrations/001_ticketing_integrity.sql`.
+- Kør `./database/postgres/experiments/01_constraints_should_fail.sql` og verificér, at testene fejler som forventet.
 
 ---
 
@@ -42,12 +50,12 @@ Vi har implementeret tre forskellige mekanismer til at beregne payments for en o
 - **Materialized View:** Et materialized view kan indeholde **forældede data**, hvis det ikke bliver refreshed efter ændringer i de underliggende tabeller.
 - **Trigger:** Triggeren påvirker kun data **efter det tidspunkt, hvor triggeren er blevet oprettet**. I vores tilfælde medregner det ikke payments fra seed-data.
 
-### TODO
-- [ ] Kør `./database/postgres/migrations/002_revenue_functions.sql`.
-- [ ] Kør `./database/postgres/queries/base_revenue.sql`, for at tjekker udgangspunktet.
-- [ ] Kør `./database/postgres/queries/check_revenue_captures.sql`, for at tjekker udgangspunktet.
-- [ ] Kør  `./database/postgres/experiments/02_reporting_cases.sql`, for at indsætte payments.
-- [ ] Kør `./database/postgres/queries/base_revenue.sql` for at tjekker det nye udgangspunkt, og `./database/postgres/queries/check_revenue_captures.sql` for at tjekker, hvordan de forskellige mekanismer beregner total payments.
+### Sådan kører du det
+- Kør `./database/postgres/migrations/002_revenue_functions.sql`.
+- Kør `./database/postgres/queries/base_revenue.sql`, for at tjekker udgangspunktet.
+- Kør `./database/postgres/queries/check_revenue_captures.sql`, for at tjekker udgangspunktet.
+- Kør  `./database/postgres/experiments/02_reporting_cases.sql`, for at indsætte payments.
+- Kør `./database/postgres/queries/base_revenue.sql` for at tjekker det nye udgangspunkt, og `./database/postgres/queries/check_revenue_captures.sql` for at tjekker, hvordan de forskellige mekanismer beregner total payments.
 
 ---
 
@@ -70,11 +78,11 @@ Den eksisterende `product_code` bevares i første omgang, så den gamle reader/w
 
 Migrationen anvender desuden `NOT VALID` på foreign key-constrainten, så constrainten kan oprettes uden først at validere eksisterende data. Nye data skal dog overholde FK-contrainten.
 
-### TODO
+### Sådan kører du det
 
-- [ ] Kør `./database/postgres/migrations/003_ticket_migration.sql`.
-- [ ] Kør `./database/postgres/experiments/03_check_ticket_table_after_migrations.sql`.
-- [ ] Kontrollér, at den gamle Writer/Reader stadig fungerer.
+- Kør `./database/postgres/migrations/003_ticket_migration.sql`.
+- Kør `./database/postgres/experiments/03_check_ticket_table_after_migrations.sql`.
+- Kontrollér, at den gamle Writer/Reader stadig fungerer.
 
 ---
 
