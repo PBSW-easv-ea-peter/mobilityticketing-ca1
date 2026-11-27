@@ -1,4 +1,12 @@
-# MobilityTicketing — Compulsory Assignment 1
+# MobilityTicketing — Databases for Developers
+
+Repoet samler vores arbejde fra ugelabsene. Compulsory Assignment 1 dækker uge 1–4. **Compulsory Assignment 2** dækker NoSQL (L5), Redis (L6), route overview (L7), query optimization (L8) og transactions (L9).
+
+**Til review af CA2: start i [`docs/ca2-review-guide.md`](docs/ca2-review-guide.md).** Den har setup og reset for hver lab, links til kode og evidens, to beslutninger og en begrænsning.
+
+Krav: Docker Desktop (Compose v2). L6 kræver også .NET 10 SDK. Alt nulstilles med `docker compose down -v`.
+
+---
 
 ## Uge 1 – Normalisering
 
@@ -7,9 +15,9 @@ Vi har valgt at fjerne `ticket_code` fra tabellen `Validations`, da `ticket_code
 
 Ved at fjerne `ticket_code` undgår vi at gemme den samme information flere steder og reducerer dermed risikoen for inkonsistente data.
 
-### TODO
-- [ ] Compose  `./docker-compose.yaml`.
-- [ ] Connect til Postgres databasen `mobility` på localhost:5432
+### Sådan kører du det
+- Compose  `./docker-compose.yaml`.
+- Connect til Postgres databasen `mobility` på localhost:5432
 
 `mobility` burde nu være sat op med vores schema og seed-data fra `./databse/postgres/init/`.
 
@@ -27,9 +35,9 @@ Eksempler på validering:
 
 Derudover er der oprettet tests, som forsøger at indsætte ugyldige data. Disse tests skal fejle, hvilket demonstrerer, at vores constraints fungerer som forventet.
 
-### TODO
-- [ ] Kør `./database/postgres/migrations/001_ticketing_integrity.sql`.
-- [ ] Kør `./database/postgres/experiments/01_constraints_should_fail.sql` og verificér, at testene fejler som forventet.
+### Sådan kører du det
+- Kør `./database/postgres/migrations/001_ticketing_integrity.sql`.
+- Kør `./database/postgres/experiments/01_constraints_should_fail.sql` og verificér, at testene fejler som forventet.
 
 ---
 
@@ -42,12 +50,12 @@ Vi har implementeret tre forskellige mekanismer til at beregne payments for en o
 - **Materialized View:** Et materialized view kan indeholde **forældede data**, hvis det ikke bliver refreshed efter ændringer i de underliggende tabeller.
 - **Trigger:** Triggeren påvirker kun data **efter det tidspunkt, hvor triggeren er blevet oprettet**. I vores tilfælde medregner det ikke payments fra seed-data.
 
-### TODO
-- [ ] Kør `./database/postgres/migrations/002_revenue_functions.sql`.
-- [ ] Kør `./database/postgres/queries/base_revenue.sql`, for at tjekker udgangspunktet.
-- [ ] Kør `./database/postgres/queries/check_revenue_captures.sql`, for at tjekker udgangspunktet.
-- [ ] Kør  `./database/postgres/experiments/02_reporting_cases.sql`, for at indsætte payments.
-- [ ] Kør `./database/postgres/queries/base_revenue.sql` for at tjekker det nye udgangspunkt, og `./database/postgres/queries/check_revenue_captures.sql` for at tjekker, hvordan de forskellige mekanismer beregner total payments.
+### Sådan kører du det
+- Kør `./database/postgres/migrations/002_revenue_functions.sql`.
+- Kør `./database/postgres/queries/base_revenue.sql`, for at tjekker udgangspunktet.
+- Kør `./database/postgres/queries/check_revenue_captures.sql`, for at tjekker udgangspunktet.
+- Kør  `./database/postgres/experiments/02_reporting_cases.sql`, for at indsætte payments.
+- Kør `./database/postgres/queries/base_revenue.sql` for at tjekker det nye udgangspunkt, og `./database/postgres/queries/check_revenue_captures.sql` for at tjekker, hvordan de forskellige mekanismer beregner total payments.
 
 ---
 
@@ -70,11 +78,11 @@ Den eksisterende `product_code` bevares i første omgang, så den gamle reader/w
 
 Migrationen anvender desuden `NOT VALID` på foreign key-constrainten, så constrainten kan oprettes uden først at validere eksisterende data. Nye data skal dog overholde FK-contrainten.
 
-### TODO
+### Sådan kører du det
 
-- [ ] Kør `./database/postgres/migrations/003_ticket_migration.sql`.
-- [ ] Kør `./database/postgres/experiments/03_check_ticket_table_after_migrations.sql`.
-- [ ] Kontrollér, at den gamle Writer/Reader stadig fungerer.
+- Kør `./database/postgres/migrations/003_ticket_migration.sql`.
+- Kør `./database/postgres/experiments/03_check_ticket_table_after_migrations.sql`.
+- Kontrollér, at den gamle Writer/Reader stadig fungerer.
 
 ---
 
@@ -131,6 +139,45 @@ Upload-kvitteringer skrives til `receipts/` i repo-roden. Mappen er gitignored.
 - [ ] Implementér `ReportWorkflow.cs` (lab afsnit 3-5).
 - [ ] Kør eksperimenterne (afsnit 6) og udfyld evidence (afsnit 7).
 - [ ] Stop: `lab_compose stop object-store-l11 postgres-l11`.
+## Uge 9 – Transactions
+
+Opgaven: [`docs/lecture9-transactions/lab.md`](docs/lecture9-transactions/lab.md). Starterens README: [`starter-README.md`](docs/lecture9-transactions/starter-README.md). Evidence: [`docs/evidence/lecture09/evidence.md`](docs/evidence/lecture09/evidence.md).
+
+Lecture 9 har sin egen database (`postgres-l09`, database `mobility_l09`, schema `lab09`, ingen host-port). Vi arbejder i `database/postgres/lecture09/sql/book.sql` (endelig `lab09.book`) og gemmer hver variant i `database/postgres/lecture09/sql/variants/`. `run.sh`, `setup.sql` og de udleverede scripts (`unsafe-*.sql`, `inspect.sql`, `check.sql`) holdes uændrede.
+
+Hvor lab.md skriver `docker compose exec postgres ...`, bruges `postgres-l09` i stedet. `sql/...` i lab.md svarer til `database/postgres/lecture09/sql/...`.
+
+### TODO
+- [ ] Start databasen: `docker compose up -d --wait postgres-l09`.
+- [ ] Nulstil fixturen: `docker compose exec -T postgres-l09 bash /lab/run.sh reset` (indlæser også `book.sql`).
+- [ ] Åbn session A og B (én pr. terminal): `docker compose exec postgres-l09 psql -X -U mobility -d mobility_l09 -v ON_ERROR_STOP=1 -v VERBOSITY=verbose`.
+- [ ] Genindlæs funktionen: `docker compose exec -T postgres-l09 bash /lab/run.sh load`.
+- [ ] Inspicér og tjek: `docker compose exec -T postgres-l09 bash /lab/run.sh inspect` og `... run.sh check`.
+
+### Genskab en variant
+
+Hver version af `lab09.book` ligger i `database/postgres/lecture09/sql/variants/` som en `CREATE OR REPLACE FUNCTION`. En tidligere version kan genskabes uden at ændre `book.sql`:
+
+```powershell
+docker compose exec -T postgres-l09 bash /lab/run.sh reset
+docker compose exec -T postgres-l09 psql -X -U mobility -d mobility_l09 -f /lab/sql/variants/02-conditional.sql
+```
+
+`reset` giver frisk data og indlæser `book.sql`. Den anden linje erstatter funktionen i databasen med den valgte variant. Undtagelse: `01-unsafe-increment.sql` er et write-script til den usikre sekvens i opgave 1 og køres med `\i` i psql.
+
+---
+
+## Uge 10 – Distributed databases (MongoDB replica set)
+
+Opgaven: [`docs/lecture10-distributed-databases/lab.md`](docs/lecture10-distributed-databases/lab.md). Starterens README: [`starter-README.md`](docs/lecture10-distributed-databases/starter-README.md). Evidence: [`docs/evidence/lecture10/evidence.md`](docs/evidence/lecture10/evidence.md) (rå output i `raw/`).
+
+Lecture 10 er selvstændig og har sin egen `compose.yaml` i `database/mongodb/lecture10` (projekt `mobility-lecture10`, tre noder `mongo1`–`mongo3` plus en `client`, ingen host-porte). Vi arbejder kun i `scripts/verify.js`. Kør kommandoerne fra den mappe i Git Bash eller WSL. I Git Bash på Windows skal man først køre `export MSYS_NO_PATHCONV=1`, ellers omskriver Git Bash stierne `/lab/...`.
+
+### TODO
+- [ ] `cd database/mongodb/lecture10 && bash run.sh up && bash run.sh status`
+- [ ] Opgave 1–4 med `bash run.sh write|read|verify|check` (se evidence)
+- [ ] Stop/start noder: `docker compose stop mongo1` / `docker compose start mongo1`, derefter `bash run.sh up`
+- [ ] Afslut med `bash run.sh down` (aldrig `-v`, medmindre data skal slettes)
 
 ---
 

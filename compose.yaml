@@ -150,6 +150,23 @@ services:
       AWS_RESPONSE_CHECKSUM_VALIDATION: WHEN_REQUIRED
     volumes:
       - ./:/work
+  postgres-l09:
+    profiles: ["l09"]
+    image: postgres:17-bookworm@sha256:3645570cccdfa447589da9f57dd740faa29b30938e861289a5574b6ca6b03826
+    environment:
+      POSTGRES_DB: mobility_l09
+      POSTGRES_USER: mobility
+      POSTGRES_PASSWORD: mobility
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mobility -d mobility_l09"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+    volumes:
+      - mobility-l09-data:/var/lib/postgresql/data
+      - ./database/postgres/lecture09/run.sh:/lab/run.sh:ro
+      - ./database/postgres/lecture09/setup.sql:/lab/database/setup.sql:ro
+      - ./database/postgres/lecture09/sql:/lab/sql:ro
 
 volumes:
   mobility-mongo:
@@ -157,3 +174,4 @@ volumes:
   mobility-l08-data:
   mobility-l11-objects:
   mobility-l11-pg:
+  mobility-l09-data:
