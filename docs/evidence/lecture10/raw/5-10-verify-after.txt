@@ -1,0 +1,4 @@
+$ bash run.sh verify ROLLBACK-ONE ROLLBACK-MAJ
+{"action":"verify","operationId":"ROLLBACK-ONE","startedAt":"2026-11-25T08:41:35.721Z","readPreference":"primary","readConcern":"majority","writeConcern":null,"retryWrites":false,"retryReads":false,"actual":null,"outcome":"AbsentAtVerification","finishedAt":"2026-11-25T08:41:36.183Z","durationMs":462}
+{"action":"verify","operationId":"ROLLBACK-MAJ","startedAt":"2026-11-25T08:41:36.184Z","readPreference":"primary","readConcern":"majority","writeConcern":null,"retryWrites":false,"retryReads":false,"actual":null,"outcome":"AbsentAtVerification","finishedAt":"2026-11-25T08:41:36.228Z","durationMs":44}
+[exit 0]

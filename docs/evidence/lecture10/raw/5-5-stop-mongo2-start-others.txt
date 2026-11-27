@@ -1,0 +1,8 @@
+$ sh -c docker compose stop mongo2 && docker compose start mongo1 mongo3
+ Container mobility-lecture10-mongo2-1 Stopping 
+ Container mobility-lecture10-mongo2-1 Stopped 
+ Container mobility-lecture10-mongo3-1 Starting 
+ Container mobility-lecture10-mongo1-1 Starting 
+ Container mobility-lecture10-mongo3-1 Started 
+ Container mobility-lecture10-mongo1-1 Started 
+[exit 0]

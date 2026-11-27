@@ -1,0 +1,4 @@
+$ docker compose exec -T mongo2 bsondump --quiet /data/db/rollback/11389483-2b8f-4e0f-a43d-31247d4b0e19/removed.2026-11-25T08-41-24.0.bson
+{"_id":"ROLLBACK-ONE","tripId":"T102","status":"Cancelled","sourceVersion":{"$numberInt":"2"}}
+{"_id":"ROLLBACK-MAJ","tripId":"T102","status":"Cancelled","sourceVersion":{"$numberInt":"2"}}
+[exit 0]

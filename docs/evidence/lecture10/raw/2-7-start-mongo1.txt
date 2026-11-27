@@ -1,0 +1,4 @@
+$ docker compose start mongo1
+ Container mobility-lecture10-mongo1-1 Starting 
+ Container mobility-lecture10-mongo1-1 Started 
+[exit 0]

@@ -1,0 +1,10 @@
+$ bash run.sh check
+{"test":"no document","outcome":"Fail","message":"TODO: compare the successful read with the expected change."}
+{"test":"matching document","outcome":"Fail","message":"TODO: compare the successful read with the expected change."}
+{"test":"different ID","outcome":"Fail","message":"TODO: compare the successful read with the expected change."}
+{"test":"different trip","outcome":"Fail","message":"TODO: compare the successful read with the expected change."}
+{"test":"different status","outcome":"Fail","message":"TODO: compare the successful read with the expected change."}
+{"test":"different version","outcome":"Fail","message":"TODO: compare the successful read with the expected change."}
+{"test":"missing version","outcome":"Fail","message":"TODO: compare the successful read with the expected change."}
+{"passed":0,"failed":7}
+[exit 1]
