@@ -487,3 +487,6 @@ docs/evidence/lecture07/logs/*
 !docs/evidence/lecture07/logs/
 !docs/evidence/lecture07/logs/.gitkeep
 docs/evidence/lecture07/tests/
+
+# Lecture 11 upload receipts (local state)
+/receipts/
