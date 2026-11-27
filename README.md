@@ -121,6 +121,31 @@ Lecture 10 er selvstændig og har sin egen `compose.yaml` i `database/mongodb/le
 - [ ] Opgave 1–4 med `bash run.sh write|read|verify|check` (se evidence)
 - [ ] Stop/start noder: `docker compose stop mongo1` / `docker compose start mongo1`, derefter `bash run.sh up`
 - [ ] Afslut med `bash run.sh down` (aldrig `-v`, medmindre data skal slettes)
+## Uge 9 – Transactions
+
+Opgaven: [`docs/lecture9-transactions/lab.md`](docs/lecture9-transactions/lab.md). Starterens README: [`starter-README.md`](docs/lecture9-transactions/starter-README.md). Evidence: [`docs/evidence/lecture09/evidence.md`](docs/evidence/lecture09/evidence.md).
+
+Lecture 9 har sin egen database (`postgres-l09`, database `mobility_l09`, schema `lab09`, ingen host-port). Vi arbejder i `database/postgres/lecture09/sql/book.sql` (endelig `lab09.book`) og gemmer hver variant i `database/postgres/lecture09/sql/variants/`. `run.sh`, `setup.sql` og de udleverede scripts (`unsafe-*.sql`, `inspect.sql`, `check.sql`) holdes uændrede.
+
+Hvor lab.md skriver `docker compose exec postgres ...`, bruges `postgres-l09` i stedet. `sql/...` i lab.md svarer til `database/postgres/lecture09/sql/...`.
+
+### TODO
+- [ ] Start databasen: `docker compose up -d --wait postgres-l09`.
+- [ ] Nulstil fixturen: `docker compose exec -T postgres-l09 bash /lab/run.sh reset` (indlæser også `book.sql`).
+- [ ] Åbn session A og B (én pr. terminal): `docker compose exec postgres-l09 psql -X -U mobility -d mobility_l09 -v ON_ERROR_STOP=1 -v VERBOSITY=verbose`.
+- [ ] Genindlæs funktionen: `docker compose exec -T postgres-l09 bash /lab/run.sh load`.
+- [ ] Inspicér og tjek: `docker compose exec -T postgres-l09 bash /lab/run.sh inspect` og `... run.sh check`.
+
+### Genskab en variant
+
+Hver version af `lab09.book` ligger i `database/postgres/lecture09/sql/variants/` som en `CREATE OR REPLACE FUNCTION`. En tidligere version kan genskabes uden at ændre `book.sql`:
+
+```powershell
+docker compose exec -T postgres-l09 bash /lab/run.sh reset
+docker compose exec -T postgres-l09 psql -X -U mobility -d mobility_l09 -f /lab/sql/variants/02-conditional.sql
+```
+
+`reset` giver frisk data og indlæser `book.sql`. Den anden linje erstatter funktionen i databasen med den valgte variant. Undtagelse: `01-unsafe-increment.sql` er et write-script til den usikre sekvens i opgave 1 og køres med `\i` i psql.
 
 ---
 
