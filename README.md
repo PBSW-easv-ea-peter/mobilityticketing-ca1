@@ -157,6 +157,27 @@ Lecture 10 er selvstændig og har sin egen `compose.yaml` i `database/mongodb/le
 - [ ] Opgave 1–4 med `bash run.sh write|read|verify|check` (se evidence)
 - [ ] Stop/start noder: `docker compose stop mongo1` / `docker compose start mongo1`, derefter `bash run.sh up`
 - [ ] Afslut med `bash run.sh down` (aldrig `-v`, medmindre data skal slettes)
+## Uge 11 – Data storage
+
+Opgaven: [`docs/lecture11-data-storage/lab.md`](docs/lecture11-data-storage/lab.md). Starterens README: [`starter-README.md`](docs/lecture11-data-storage/starter-README.md). Evidence: [`docs/evidence/lecture11/evidence.md`](docs/evidence/lecture11/evidence.md).
+
+Lecture 11 har sin egen PostgreSQL (`postgres-l11`, database `mobility_l11`, host-port 25411) og en S3-kompatibel object store (`object-store-l11`, host-port 19011), begge i compose-profilen `l11`. Konsolappen ligger i `src/MobilityTicketing.Reports*`. Vi arbejder kun i `src/MobilityTicketing.Reports.Application/ReportWorkflow.cs`, og fixtures i `fixtures/lecture11/` holdes uændrede.
+
+Hjælpefunktionerne ligger i `lab-l11.sh` og kræver Bash (Git Bash på Windows). Kør alt fra repo-roden. I forhold til labbets tekst er der tre forskelle:
+- Service-navnene er `postgres-l11` og `object-store-l11` i stedet for `postgres` og `object-store`.
+- Fixtures ligger i `fixtures/lecture11/`, så det hedder fx `report publish R-001 fixtures/lecture11/validations-v1.jsonl`.
+- `report()` er allerede defineret i `lab-l11.sh`. Den sætter `DOTNET_ROLL_FORWARD=Major`, så net8.0-appen også kører, når kun en nyere .NET-runtime er installeret.
+
+Upload-kvitteringer skrives til `receipts/` i repo-roden. Mappen er gitignored.
+
+### TODO
+- [ ] Indlæs hjælpefunktionerne (i hver ny terminal): `source ./lab-l11.sh`.
+- [ ] Start services: `lab_compose up -d --wait postgres-l11 object-store-l11`.
+- [ ] Første gang, opret bucket med versioning: `s3 s3api create-bucket --bucket "$LAB_BUCKET"` og `s3 s3api put-bucket-versioning --bucket "$LAB_BUCKET" --versioning-configuration Status=Enabled`. Ved genoptagelse: `s3 s3api head-bucket --bucket "$LAB_BUCKET"`.
+- [ ] Tjek: `s3 s3api get-bucket-versioning --bucket "$LAB_BUCKET"` (viser `"Status": "Enabled"`) og `show_reports`.
+- [ ] Implementér `ReportWorkflow.cs` (lab afsnit 3-5).
+- [ ] Kør eksperimenterne (afsnit 6) og udfyld evidence (afsnit 7).
+- [ ] Stop: `lab_compose stop object-store-l11 postgres-l11`.
 
 ---
 
