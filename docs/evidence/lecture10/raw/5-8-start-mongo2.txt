@@ -1,0 +1,17 @@
+$ sh -c docker compose start mongo2 && bash run.sh up | tail -1
+ Container mobility-lecture10-mongo2-1 Starting 
+ Container mobility-lecture10-mongo2-1 Started 
+ Container mobility-lecture10-mongo3-1 Running 
+ Container mobility-lecture10-client-1 Running 
+ Container mobility-lecture10-mongo1-1 Running 
+ Container mobility-lecture10-mongo2-1 Running 
+ Container mobility-lecture10-mongo2-1 Waiting 
+ Container mobility-lecture10-mongo3-1 Waiting 
+ Container mobility-lecture10-client-1 Waiting 
+ Container mobility-lecture10-mongo1-1 Waiting 
+ Container mobility-lecture10-mongo1-1 Healthy 
+ Container mobility-lecture10-mongo3-1 Healthy 
+ Container mobility-lecture10-client-1 Healthy 
+ Container mobility-lecture10-mongo2-1 Healthy 
+{"outcome":"Ready","replicaSet":"rs0","at":"2026-11-25T08:41:30.315Z"}
+[exit 0]

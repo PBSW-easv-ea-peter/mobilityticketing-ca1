@@ -1,0 +1,10 @@
+$ bash run.sh check
+{"test":"no document","outcome":"Pass"}
+{"test":"matching document","outcome":"Pass"}
+{"test":"different ID","outcome":"Pass"}
+{"test":"different trip","outcome":"Pass"}
+{"test":"different status","outcome":"Pass"}
+{"test":"different version","outcome":"Pass"}
+{"test":"missing version","outcome":"Pass"}
+{"passed":7,"failed":0}
+[exit 0]

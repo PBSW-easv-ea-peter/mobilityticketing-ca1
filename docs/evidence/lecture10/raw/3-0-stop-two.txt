@@ -1,0 +1,6 @@
+$ docker compose stop mongo1 mongo3
+ Container mobility-lecture10-mongo3-1 Stopping 
+ Container mobility-lecture10-mongo1-1 Stopping 
+ Container mobility-lecture10-mongo3-1 Stopped 
+ Container mobility-lecture10-mongo1-1 Stopped 
+[exit 0]

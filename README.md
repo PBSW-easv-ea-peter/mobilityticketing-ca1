@@ -110,4 +110,18 @@ Lecture 8 har sin egen database (`postgres-l08`, database `mobility_l08`, schema
 
 ---
 
+## Uge 10 – Distributed databases (MongoDB replica set)
+
+Opgaven: [`docs/lecture10-distributed-databases/lab.md`](docs/lecture10-distributed-databases/lab.md). Starterens README: [`starter-README.md`](docs/lecture10-distributed-databases/starter-README.md). Evidence: [`docs/evidence/lecture10/evidence.md`](docs/evidence/lecture10/evidence.md) (rå output i `raw/`).
+
+Lecture 10 er selvstændig og har sin egen `compose.yaml` i `database/mongodb/lecture10` (projekt `mobility-lecture10`, tre noder `mongo1`–`mongo3` plus en `client`, ingen host-porte). Vi arbejder kun i `scripts/verify.js`. Kør kommandoerne fra den mappe i Git Bash eller WSL. I Git Bash på Windows skal man først køre `export MSYS_NO_PATHCONV=1`, ellers omskriver Git Bash stierne `/lab/...`.
+
+### TODO
+- [ ] `cd database/mongodb/lecture10 && bash run.sh up && bash run.sh status`
+- [ ] Opgave 1–4 med `bash run.sh write|read|verify|check` (se evidence)
+- [ ] Stop/start noder: `docker compose stop mongo1` / `docker compose start mongo1`, derefter `bash run.sh up`
+- [ ] Afslut med `bash run.sh down` (aldrig `-v`, medmindre data skal slettes)
+
+---
+
 Vores arbejde for de enkelte uger kan findes i `docs`, og PROGRESSION.md forklarer udviklingen.
