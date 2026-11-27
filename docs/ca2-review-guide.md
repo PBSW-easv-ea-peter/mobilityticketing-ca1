@@ -5,8 +5,8 @@ Compulsory Assignment 2 i Databases for Developers samler fem ugelabs: NoSQL (L5
 ## Afleveret commit
 
 - Repo: <https://github.com/PBSW-easv-ea-peter/mobilityticketing-ca1>
-- Commit: `udfyldes ved aflevering` (samme hash som i Moodle-afleveringen)
-- Kørt fra et frisk clone: `udfyldes` (dato og resultat, se [Testkørsel](#testkørsel))
+- Commit: det hash, der står i Moodle-afleveringen. Koden er testet på `a3bec56`. Commits derefter ændrer kun dokumentation.
+- Kørt fra et frisk clone af `a3bec56` den 27/11-2026: alle fem labs grønne, se [Testkørsel](#testkørsel).
 
 ## Setup
 
@@ -177,14 +177,13 @@ Andre åbne spørgsmål: L9 er kun testet med to samtidige sessioner.
 
 ## Testkørsel
 
-Udfyldes efter en kørsel fra et frisk clone af det afleverede commit (#9).
-
-Forkørsel 27/11 (før merge, med kommandoerne i denne guide): L5 `search.js` 10/10 PASS og `alternative.js` 10/10 PASS før aflysning (de 3 FAIL efter aflysning er forventede). L6 test A–D PASS, og med Redis stoppet svarer søgningen fra MongoDB (`cache unavailable`). L7 51/51 tests grønne på `lecture/week43_peter`. L8 `check` 4/4 PASS, og `candidate` på R-0 giver Index Scan med 24 buffers. L9 `check` bestået på PR-grenen.
+Frisk `git clone` af `master` på `a3bec56`, 27/11-2026, Windows 11 med Docker Desktop og Git Bash (`MSYS_NO_PATHCONV=1`). Kommandoerne er dem, der står i denne guide.
 
 | Lab | Kommando | Resultat |
 | --- | --- | --- |
-| L5 | `search.js` | |
-| L6 | `CacheLab` | |
-| L7 | `docker compose --profile l07 run --rm tests` | |
-| L8 | `run.sh check` | |
-| L9 | `run.sh check` | |
+| – | `docker compose config` | Gyldig |
+| L5 | `search.js`, `validation.js`, `alternative.js` (efter `reset.js`) | 10/10 PASS. Validering afviser 2/2 (code 121). `alternative.js` 10/10 PASS før aflysning |
+| L6 | `dotnet run --project database/redis/lecture06/CacheLab`, derefter `-- morning` med Redis stoppet | 12 PASS, 0 FAIL. Redis nede: `cache unavailable`, svar fra MongoDB |
+| L7 | `docker compose --profile l07 run --rm tests`, `scale` + `overview` | 51/51 tests. Live-tavlen: 1 read-kommando ved 200 ruter / 100.000 trips |
+| L8 | `run.sh check`, `indexes`, `measure candidate R-0` | 4/4 PASS. Index Scan på `trips_route_sched_dep_id_idx`, 0,24 ms |
+| L9 | `run.sh reset` + `run.sh check` | "Single-session checks passed" |
